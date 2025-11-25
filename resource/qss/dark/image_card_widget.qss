@@ -1,0 +1,7 @@
+ImageCardWidget {
+    background-color: rgb(39, 39, 39);
+}
+
+QLabel#ImageLabel{
+    background-color: transparent;
+}

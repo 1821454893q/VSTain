@@ -1,0 +1,39 @@
+# Python
+**/__pycache__/
+**/*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.png
+*.jpg
+!resource/**/*.jpg
+
+.github
+resource/screenshot
+resource/features
+resource/modules
+resource/config_params.json

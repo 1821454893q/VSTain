@@ -1,0 +1,30 @@
+[project]
+name = "VSTain"
+version = "0.0.1"
+description = "VSTain - Vision Script Tool"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "PyQt5==5.15.11",
+    "pyqt5_sip==12.17.1",
+    "pyqt-fluent-widgets==1.9.2",
+    "gas",
+    "opencv-python>=4.12.0.88",
+    "onnxruntime-directml>=1.23.0",
+]
+
+[project.scripts]
+VSTain = "src.erchong.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+resolution = "highest"
+required-environments = [
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+[tool.uv.sources]
+gas = { git = "https://github.com/1821454893q/game_ocr_script.git", rev = "v0.1.4" }
