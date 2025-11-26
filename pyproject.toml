@@ -27,4 +27,4 @@ required-environments = [
 ]
 
 [tool.uv.sources]
-gas = { git = "https://github.com/1821454893q/game_ocr_script.git", rev = "v0.1.4" }
+gas = { git = "https://github.com/1821454893q/game_ocr_script.git", rev = "v0.1.5" }

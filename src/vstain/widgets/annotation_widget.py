@@ -42,6 +42,7 @@ from src.vstain.config.settings import PROJECT_ROOT, MODULES_DIR
 from src.vstain.utils.logger import get_logger
 from src.vstain.common.style_sheet import StyleSheet
 from gas.util.onnx_util import YOLOONNXDetector
+from src.vstain.common.config import cfg
 
 log = get_logger()
 
@@ -426,16 +427,39 @@ class AnnotationWidget(QWidget):
         super().__init__(parent=parent)
         self.setObjectName(objectName)
         self.setFocusPolicy(Qt.StrongFocus)  # 接收键盘事件
-
+        self._init_auto_detect()
         self.current_image_path = None
         self.image_files = []
         self.current_index = 0
-        self.classes = ["ui_quit", "ui_menu", "ui_lv", "ui_task", "ui_bag", "ui_chat", "ui_map"]  # 根据你的游戏自行修改
 
         self._setup_ui()
         self._set_connections()
 
         StyleSheet.ANNOTATION_WIDGET.apply(self)
+
+    def showEvent(self, a0):
+        # 重新加载自动检测模型
+        self._init_auto_detect()
+        return super().showEvent(a0)
+
+    def _init_auto_detect(self):
+        model_path = MODULES_DIR / "best.onnx"
+        if model_path.exists():
+            size = cfg.get(cfg.onnxModelInput)
+            self.detector = YOLOONNXDetector(
+                str(model_path), conf_threshold=0.8, input_size=(size, size), providers=[cfg.get(cfg.onnxProvider)]
+            )
+            self.classes = self.detector.get_class_names()
+            log.debug(
+                f"已加载模型: {model_path} 模型加载成功, 类别数: {len(self.classes)} 使用提供者: {cfg.get(cfg.onnxProvider)}"
+            )
+        elif self.detector is not None:
+            InfoBar.warning("提示", "未找到模型文件, 请检查模型文件是否存在", parent=self)
+            self.detector = None
+            self.classes = []
+        else:
+            self.detector = None
+            self.classes = []
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -735,19 +759,13 @@ class AnnotationWidget(QWidget):
             self.annotation_list.takeItem(self.annotation_list.count() - 1)
 
     def _detect_annotations(self):
-        if not hasattr(self, "detector"):
-            model_path = MODULES_DIR / "best.onnx"
-            if not model_path.exists():
-                InfoBar.warning("未找到模型", f"{model_path} 不存在", parent=self)
-                return
-            self.detector = YOLOONNXDetector(
-                str(model_path), class_names=self.classes, conf_threshold=0.8, input_size=(640, 640)
-            )
-
+        if self.detector is None:
+            InfoBar.warning("自动检测失败", "模型未找到,无法进行自动检测", parent=self)
+            return
         try:
-            _, detections, _ = self.detector.detect(str(self.current_image_path))
+            _, detections, ms = self.detector.detect(str(self.current_image_path))
             self.canvas.set_annotations(detections, self.classes)
-            InfoBar.success("自动标注完成", f"检测到 {len(detections)} 个目标", parent=self)
+            InfoBar.success("自动标注完成", f"检测到 {len(detections)} 个目标 耗时 {ms:.2f}ms", parent=self)
         except Exception as e:
             InfoBar.error("检测失败", str(e), parent=self)
 

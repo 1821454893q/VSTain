@@ -295,29 +295,6 @@ wheels = [
 ]
 
 [[package]]
-name = "erchong"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "gas" },
-    { name = "onnxruntime-directml" },
-    { name = "opencv-python" },
-    { name = "pyqt-fluent-widgets" },
-    { name = "pyqt5" },
-    { name = "pyqt5-sip" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gas", git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.4" },
-    { name = "onnxruntime-directml", specifier = ">=1.23.0" },
-    { name = "opencv-python", specifier = ">=4.12.0.88" },
-    { name = "pyqt-fluent-widgets", specifier = "==1.9.2" },
-    { name = "pyqt5", specifier = "==5.15.11" },
-    { name = "pyqt5-sip", specifier = "==12.17.1" },
-]
-
-[[package]]
 name = "evdev"
 version = "1.9.2"
 source = { registry = "https://pypi.org/simple" }
@@ -395,7 +372,7 @@ wheels = [
 [[package]]
 name = "gas"
 version = "1.0.0"
-source = { git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.4#56cc0329d1e0cc599b6b163b0176b20a2d26dff9" }
+source = { git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.5#e28b43b7d22390c2fafb402b0eb46e5a0eba4677" }
 dependencies = [
     { name = "dxcam" },
     { name = "matplotlib" },
@@ -4474,6 +4451,29 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+]
+
+[[package]]
+name = "vstain"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "gas" },
+    { name = "onnxruntime-directml" },
+    { name = "opencv-python" },
+    { name = "pyqt-fluent-widgets" },
+    { name = "pyqt5" },
+    { name = "pyqt5-sip" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gas", git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.5" },
+    { name = "onnxruntime-directml", specifier = ">=1.23.0" },
+    { name = "opencv-python", specifier = ">=4.12.0.88" },
+    { name = "pyqt-fluent-widgets", specifier = "==1.9.2" },
+    { name = "pyqt5", specifier = "==5.15.11" },
+    { name = "pyqt5-sip", specifier = "==12.17.1" },
 ]
 
 [[package]]

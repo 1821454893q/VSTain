@@ -339,7 +339,7 @@ class ImageCardWidget(qfr.FramelessWindow):
                     str(model_path),
                     conf_threshold=0.3,
                     input_size=(input_size, input_size),
-                    providers=[cfg.get(cfg.onnxProvider)]
+                    providers=[cfg.get(cfg.onnxProvider)],
                 )
             except Exception as e:
                 log.error(f"模型加载失败: {e}")
@@ -558,6 +558,7 @@ class ImageCardWidget(qfr.FramelessWindow):
                 try:
                     _, detections, ms = self.detector.detect(scr)
                     display_img = self._draw_detections(scr, detections)
+                    log.debug(f"onnx provider:{cfg.get(cfg.onnxProvider)} 检测耗时: {ms:.2f}ms")
                 except Exception as e:
                     log.error(f"检测异常: {e}")
 
