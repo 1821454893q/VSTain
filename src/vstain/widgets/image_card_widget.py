@@ -10,10 +10,11 @@ from PyQt5.QtWidgets import QLabel
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import QEventLoop
 
-import re  # 新增：用于清理非法字符
+import re  # 用于清理非法字符
 import os
 
-from vstain.config.settings import RESOURCE_DIR, MODULES_DIR
+from vstain.common.cons import SPECIAL_KEY_MAP
+from vstain.config.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
 from enum import IntEnum
@@ -30,6 +31,7 @@ from gas.util.keymouse_util import KeyMouseUtil
 from gas.cons.key_code import KeyCode, get_windows_keycode
 
 from src.vstain.utils.logger import get_logger
+from vstain.utils.operation_recorder import OperationRecorder
 
 log = get_logger()
 
@@ -59,11 +61,12 @@ class ZoomableImageLabel(QLabel):
         self.offset_y = 0
         self.is_dragging = False
         self.last_pos = None
-        self.is_first_load = True  # 新增：用于跟踪是否首次加载
+        self.is_first_load = True  # 用于跟踪是否首次加载
 
-        # 新增：远程控制相关属性
+        # 远程控制相关属性
         self.parent_widget = parent  # 保存父组件引用
         self.last_mouse_pos = None
+        self.last_move_record_time = 0
 
     def wheelEvent(self, event: QWheelEvent):
         # 如果启用了远程控制，转发滚轮事件到目标窗口
@@ -75,6 +78,14 @@ class ZoomableImageLabel(QLabel):
                 delta = event.angleDelta().y()
                 count = 1 if delta > 0 else -1
                 KeyMouseUtil.scroll_mouse(self.parent_widget.windows.hwnd, count, img_x, img_y)
+
+            # 录制滚轮操作
+            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+                if img_x >= 0 and img_y >= 0:
+                    delta = event.angleDelta().y()
+                    count = 1 if delta > 0 else -1
+                    # 录制滚轮操作
+                    self.parent_widget.operation_recorder.add_mouse_scroll(img_x, img_y, count)
             return
 
         pix = self.pixmap()
@@ -148,6 +159,19 @@ class ZoomableImageLabel(QLabel):
                     KeyMouseUtil.mouse_right_down(self.parent_widget.windows.hwnd, img_x, img_y)
                 elif event.button() == Qt.MiddleButton:
                     KeyMouseUtil.mouse_middle_down(self.parent_widget.windows.hwnd, img_x, img_y)
+            # 录制鼠标按下操作
+            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+                if img_x >= 0 and img_y >= 0:
+                    button_name = ""
+                    if event.button() == Qt.LeftButton:
+                        button_name = "left"
+                    elif event.button() == Qt.RightButton:
+                        button_name = "right"
+                    elif event.button() == Qt.MiddleButton:
+                        button_name = "middle"
+
+                    if button_name:
+                        self.parent_widget.operation_recorder.add_mouse_click(img_x, img_y, button_name, "down")
             return
 
         if event.button() == Qt.LeftButton:
@@ -167,6 +191,17 @@ class ZoomableImageLabel(QLabel):
                     KeyMouseUtil.mouse_move(self.parent_widget.windows.hwnd, img_x, img_y)
 
                 self.last_mouse_pos = (img_x, img_y)
+
+            # 录制鼠标移动操作（选择性录制，避免过多移动事件）
+            if (
+                hasattr(self.parent_widget, "is_recording")
+                and self.parent_widget.is_recording
+                and event.buttons() & Qt.LeftButton
+            ):  # 只在拖拽时记录移动
+                if img_x >= 0 and img_y >= 0 and time.time() - self.last_move_record_time > 0.05:
+                    self.last_move_record_time = time.time()
+                    self.parent_widget.operation_recorder.add_mouse_move(img_x, img_y)
+
             return
 
         # 原有本地拖拽逻辑保持不变
@@ -189,6 +224,21 @@ class ZoomableImageLabel(QLabel):
                 elif event.button() == Qt.MiddleButton:
                     KeyMouseUtil.mouse_middle_up(self.parent_widget.windows.hwnd, img_x, img_y)
             self.last_mouse_pos = None
+
+            # 录制鼠标释放操作
+            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+                if img_x >= 0 and img_y >= 0:
+                    button_name = ""
+                    if event.button() == Qt.LeftButton:
+                        button_name = "left"
+                    elif event.button() == Qt.RightButton:
+                        button_name = "right"
+                    elif event.button() == Qt.MiddleButton:
+                        button_name = "middle"
+
+                    if button_name:
+                        self.parent_widget.operation_recorder.add_mouse_click(img_x, img_y, button_name, "up")
+
             return
 
         if event.button() == Qt.LeftButton:
@@ -230,7 +280,7 @@ class ZoomableImageLabel(QLabel):
         return -1, -1
 
     def paintEvent(self, event):
-        # 新增：在首次绘制时，计算适应窗口的缩放
+        # 在首次绘制时，计算适应窗口的缩放
         if self.is_first_load and self.pixmap() and not self.pixmap().isNull():
             self.fit_to_window()  # 调用新方法计算缩放
             self.is_first_load = False  # 仅在第一次执行
@@ -295,7 +345,7 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.is_save_raw = False
         self.is_save_annotated = False
         self.is_detecting = False
-        # 新增：远程控制状态
+        # 远程控制状态
         self.is_remote_control = False
 
         self.detector = None
@@ -311,6 +361,11 @@ class ImageCardWidget(qfr.FramelessWindow):
 
         self.loop_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self.loop_thread.start()
+
+        # 操作录制器
+        self.operation_recorder = OperationRecorder()
+        self.is_recording = False
+        self.last_move_record_time = 0
 
         StyleSheet.IMAGE_CARD_WIDGET.apply(self)
 
@@ -372,10 +427,18 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.detect_btn = qf.PrimaryPushButton("检测开")
         self.detect_btn.setCheckable(True)
 
-        # 新增：远程控制按钮
+        # 远程控制按钮
         self.remote_control_btn = qf.PushButton("远程控制关")
         self.remote_control_btn.setCheckable(True)
         self.remote_control_btn.enterEvent(False)
+
+        # 录制控制按钮
+        self.record_check = qf.CheckBox("是否录制")
+        self.record_check.setChecked(True)
+
+        self.save_record_btn = qf.PushButton("保存录制")
+        self.save_record_btn.clicked.connect(self.save_recording)
+        self.save_record_btn.setEnabled(False)
 
         self.reset_view_btn = qf.PushButton("复位视图")
         self.reset_view_btn.clicked.connect(self.reset_view)
@@ -384,7 +447,9 @@ class ImageCardWidget(qfr.FramelessWindow):
         ctrl.addWidget(self.save_raw_btn)
         ctrl.addWidget(self.save_ann_btn)
         ctrl.addWidget(self.detect_btn)
-        ctrl.addWidget(self.remote_control_btn)  # 新增
+        ctrl.addWidget(self.remote_control_btn)
+        ctrl.addWidget(self.record_check)
+        ctrl.addWidget(self.save_record_btn)
         ctrl.addWidget(self.reset_view_btn)
 
         self.status_label = qf.BodyLabel("就绪")
@@ -406,8 +471,60 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.save_ann_btn.clicked.connect(
             lambda: self._toggle_save("is_save_annotated", self.save_ann_btn, "保存标注图", "停止保存标注图")
         )
-        # 新增：远程控制信号连接
+        # 远程控制信号连接
         self.remote_control_btn.clicked.connect(self.toggle_remote_control)
+
+    def start_recording(self):
+        """开始录制操作"""
+        if not self.windows:
+            qf.InfoBar.warning("无法录制", "未选择目标窗口", parent=self)
+            self.record_check.setChecked(False)
+            return
+
+        # 获取目标窗口的尺寸用于归一化
+        try:
+            import win32gui
+
+            left, top, right, bottom = win32gui.GetClientRect(self.windows.hwnd)
+            width = right - left
+            height = bottom - top
+        except Exception as e:
+            log.warning(f"获取窗口尺寸失败: {e}，使用默认尺寸")
+            width, height = 1920, 1080
+
+        self.operation_recorder.start_recording(width, height)
+        self.is_recording = True
+        self.record_check.setText("停止录制")
+        self.save_record_btn.setEnabled(False)
+
+    def stop_recording(self):
+        """停止录制操作"""
+        self.operation_recorder.stop_recording()
+        self.is_recording = False
+        self.record_check.setText("开始录制")
+        self.record_check.setChecked(False)
+        self.save_record_btn.setEnabled(True)
+
+    def save_recording(self):
+        """保存录制文件"""
+        if not self.operation_recorder.operations:
+            qf.InfoBar.warning("无法保存", "没有录制的操作", parent=self)
+            return
+
+        # 生成文件名
+        timestamp = int(time.time())
+        window_name = re.sub(r"[^\w]", "", self.windows.title) if self.windows else "unknown"
+        filename = f"operation_{window_name}_{timestamp}.json"
+
+        SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = SCRIPTS_DIR / filename
+
+        if file_path:
+            if self.operation_recorder.save_to_file(file_path):
+                self.operation_recorder.clear_operations()
+                qf.InfoBar.success("保存成功", f"操作记录已保存", duration=2000, parent=self)
+            else:
+                qf.InfoBar.error("保存失败", "请查看日志了解详情", parent=self)
 
     def toggle_pause(self):
         self.is_paused = self.pause_btn.isChecked()
@@ -422,18 +539,26 @@ class ImageCardWidget(qfr.FramelessWindow):
         setattr(self, attr, checked)
         btn.setText(text_on if not checked else text_off)
 
-    # 新增：远程控制开关
+    # 远程控制开关
     def toggle_remote_control(self):
         self.is_remote_control = self.remote_control_btn.isChecked()
         self.remote_control_btn.setText("远程控制关" if self.is_remote_control else "远程控制开")
 
         if self.is_remote_control:
             self.image_label.setFocus()
-            qf.InfoBar.success("远程控制已开启", "鼠标已隐藏，移动图像 = 转动游戏视角", duration=3000, parent=self)
 
+            self.record_check.setEnabled(False)
+            if self.record_check.isChecked():
+                self.start_recording()
+
+            qf.InfoBar.success("远程控制已开启", "鼠标已隐藏，移动图像 = 转动游戏视角", duration=3000, parent=self)
         else:
             # 恢复正常光标
             self.image_label.setCursor(QCursor(Qt.ArrowCursor))
+            self.record_check.setEnabled(True)
+            if self.record_check.isChecked():
+                self.stop_recording()
+
             qf.InfoBar.info("远程控制已关闭", "鼠标已恢复正常", duration=2000, parent=self)
 
     def keyPressEvent(self, event):
@@ -454,65 +579,8 @@ class ImageCardWidget(qfr.FramelessWindow):
         key = event.key()
         text = event.text()
 
-        special_map = {
-            # 系统/导航键
-            Qt.Key.Key_Escape: KeyCode.ESCAPE,
-            Qt.Key.Key_Space: KeyCode.SPACE,
-            Qt.Key.Key_Enter: KeyCode.ENTER,
-            Qt.Key.Key_Return: KeyCode.ENTER,
-            Qt.Key.Key_Tab: KeyCode.TAB,
-            Qt.Key.Key_Backspace: KeyCode.BACK,
-            Qt.Key.Key_Delete: KeyCode.DELETE,
-            Qt.Key.Key_Up: KeyCode.DPAD_UP,
-            Qt.Key.Key_Down: KeyCode.DPAD_DOWN,
-            Qt.Key.Key_Left: KeyCode.DPAD_LEFT,
-            Qt.Key.Key_Right: KeyCode.DPAD_RIGHT,
-            # 游戏核心键（WASD + 常用操作）
-            Qt.Key.Key_W: KeyCode.W,
-            Qt.Key.Key_A: KeyCode.A,
-            Qt.Key.Key_S: KeyCode.S,
-            Qt.Key.Key_D: KeyCode.D,
-            Qt.Key.Key_Q: KeyCode.Q,
-            Qt.Key.Key_E: KeyCode.E,
-            Qt.Key.Key_R: KeyCode.R,
-            Qt.Key.Key_F: KeyCode.F,
-            Qt.Key.Key_C: KeyCode.C,
-            Qt.Key.Key_V: KeyCode.V,
-            Qt.Key.Key_X: KeyCode.X,
-            Qt.Key.Key_Z: KeyCode.Z,
-            # 修饰键
-            Qt.Key.Key_Shift: KeyCode.LSHIFT,
-            Qt.Key.Key_Control: KeyCode.CONTROL,
-            Qt.Key.Key_Alt: KeyCode.ALT,
-            Qt.Key.Key_CapsLock: KeyCode.CAPS_LOCK,
-            # F1 ~ F12
-            Qt.Key.Key_F1: KeyCode.F1,
-            Qt.Key.Key_F2: KeyCode.F2,
-            Qt.Key.Key_F3: KeyCode.F3,
-            Qt.Key.Key_F4: KeyCode.F4,
-            Qt.Key.Key_F5: KeyCode.F5,
-            Qt.Key.Key_F6: KeyCode.F6,
-            Qt.Key.Key_F7: KeyCode.F7,
-            Qt.Key.Key_F8: KeyCode.F8,
-            Qt.Key.Key_F9: KeyCode.F9,
-            Qt.Key.Key_F10: KeyCode.F10,
-            Qt.Key.Key_F11: KeyCode.F11,
-            Qt.Key.Key_F12: KeyCode.F12,
-            # 主键盘区数字 0~9（切换武器、技能等）
-            Qt.Key.Key_0: KeyCode.DIGIT_0,
-            Qt.Key.Key_1: KeyCode.DIGIT_1,
-            Qt.Key.Key_2: KeyCode.DIGIT_2,
-            Qt.Key.Key_3: KeyCode.DIGIT_3,
-            Qt.Key.Key_4: KeyCode.DIGIT_4,
-            Qt.Key.Key_5: KeyCode.DIGIT_5,
-            Qt.Key.Key_6: KeyCode.DIGIT_6,
-            Qt.Key.Key_7: KeyCode.DIGIT_7,
-            Qt.Key.Key_8: KeyCode.DIGIT_8,
-            Qt.Key.Key_9: KeyCode.DIGIT_9,
-        }
-
-        if key in special_map:
-            code = special_map[key]
+        if key in SPECIAL_KEY_MAP:
+            code = SPECIAL_KEY_MAP[key]
             vk = get_windows_keycode(code)
         else:
             if Qt.Key_A <= key <= Qt.Key_Z:
@@ -520,6 +588,26 @@ class ImageCardWidget(qfr.FramelessWindow):
             else:
                 log.debug(f"未映射键: Qt.Key_{key} (0x{key:04X})")
                 return
+
+        # 录制键盘事件
+        if hasattr(self, "is_recording") and self.is_recording:
+
+            # 获取按键名称
+            key_name = None
+            if key in SPECIAL_KEY_MAP:
+                code = SPECIAL_KEY_MAP[key]
+                # 将KeyCode转换为可读名称
+                key_name = str(code).split(".")[-1] if hasattr(code, "name") else f"Key_{key}"
+            elif Qt.Key_A <= key <= Qt.Key_Z:
+                key_name = chr(key)
+            elif Qt.Key_0 <= key <= Qt.Key_9:
+                key_name = chr(key)
+            elif text and text.isprintable():
+                key_name = text
+
+            if key_name:
+                event_type = "down" if is_press else "up"
+                self.operation_recorder.add_keyboard(key_name, event_type)
 
         if is_press:
             KeyMouseUtil.key_down(self.windows.hwnd, vk)
@@ -537,7 +625,7 @@ class ImageCardWidget(qfr.FramelessWindow):
     def _capture_loop(self):
         frame_count = 0
         last_time = time.time()  # 1秒一次保存
-        last_save_time = 0  # 新增：上一次保存时间
+        last_save_time = 0  # 上一次保存时间
 
         while True:
             if self.is_paused:
@@ -637,9 +725,15 @@ class ImageCardWidget(qfr.FramelessWindow):
         raw = "原图√" if self.is_save_raw else ""
         ann = "标注√" if self.is_save_annotated else ""
         scale_info = f"缩放{self.image_label.scale:.1f}x"
-        remote_ctrl = "远程控制√" if self.is_remote_control else ""  # 新增
+        remote_ctrl = "远程控制√" if self.is_remote_control else ""
+
+        # 录制状态显示
+        recording_status = "录制中" if self.is_recording else ""
+        operation_count = self.operation_recorder.operation_count
+        record_info = f"操作{operation_count}" if operation_count > 0 else ""
+
         self.status_label.setText(
-            f"{self.windows.title[:30]} | {mode} | FPS {fps} | {detect} {raw}{ann} | {scale_info} | {remote_ctrl}"
+            f"{self.windows.title[:30]} | {mode} | FPS {fps} | {detect} {raw}{ann} | {scale_info} | {remote_ctrl} | {recording_status} {record_info}"
         )
 
     def _display_frame(self, frame_bgr: np.ndarray):

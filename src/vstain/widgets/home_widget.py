@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import win32gui
 from PyQt5.QtCore import Qt, QEasingCurve, QSize, QRectF
-from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget, QDialog, QLabel
+from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget, QDialog, QLabel, QFileDialog
 from PyQt5.QtGui import QPainter, QPainterPath, QLinearGradient, QColor, QBrush
 
 from gas.util.hwnd_util import get_hwnd_by_class_and_title, WindowInfo, get_window_wh
@@ -30,7 +30,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from src.vstain.config.settings import RESOURCE_DIR, MODULES_DIR
+from src.vstain.config.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
 from src.vstain.utils.platform import is_win11
 from src.vstain.widgets.image_card_widget import ImageCardWidget
 from src.vstain.widgets.hwnd_list_widget import HwndListWidget
@@ -172,6 +172,7 @@ class HomeWidget(SingleDirectionScrollArea):
         self.onnx_provider_combox.currentTextChanged.connect(
             lambda: cfg.set(cfg.onnxProvider, self.onnx_provider_combox.text())
         )
+        self.run_btn.clicked.connect(self.run_script)
 
     def udpate_cfg(self):
         self.hwnd_classname_edit.setText(cfg.get(cfg.hwndClassname))
@@ -201,3 +202,6 @@ class HomeWidget(SingleDirectionScrollArea):
         )
         widget = ImageCardWidget(windows=win)
         widget.show()
+
+    def run_script(self):
+        InfoBar.success(title="成功", content=f"执行完成: {"script_path"}", parent=self, duration=2000)
