@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-VSTain = "src.erchong.app:main"
+VSTain = "src.vstain.app:main"
 
 [build-system]
 requires = ["hatchling"]
