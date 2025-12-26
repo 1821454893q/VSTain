@@ -1,6 +1,7 @@
 """主页组件"""
 
 import os
+import threading
 from pathlib import Path
 import time
 from typing import TYPE_CHECKING
@@ -50,8 +51,14 @@ class HomeWidget(SingleDirectionScrollArea):
     def __init__(self, objectName: str, parent=None):
         super().__init__(parent=parent)
         self.setObjectName(objectName)
+
         self._setup_ui()
         self._set_connections()
+
+        self._pause_scripts = True
+        self.test_scripts_thread = threading.Thread(target=self.test_script, daemon=True)
+        self.test_scripts_thread.start()
+        log.debug("测试脚本线程已启动")
 
         StyleSheet.HOME_WIDGET.apply(self)
 
@@ -221,8 +228,17 @@ class HomeWidget(SingleDirectionScrollArea):
         widget.show()
 
     def run_script(self):
+        if self._pause_scripts:
+            self.run_btn.setText("暂停")
+            self._pause_scripts = False
+        else:
+            self.run_btn.setText("开始")
+            self._pause_scripts = True
+
+
+    def test_script(self):
         log.debug("ocr engine init")
-        engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname),1,False)
+        engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
         log.debug(f"ocr engine init done")
 
         log.debug("operation player init")
@@ -232,6 +248,10 @@ class HomeWidget(SingleDirectionScrollArea):
         flag = False
 
         while True:
+            if self._pause_scripts:
+                time.sleep(1)
+                continue
+
             engine.click_text("再次进行")
             time.sleep(1)
 

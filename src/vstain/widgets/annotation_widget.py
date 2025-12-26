@@ -453,7 +453,7 @@ class AnnotationWidget(QWidget):
             log.debug(
                 f"已加载模型: {model_path} 模型加载成功, 类别数: {len(self.classes)} 使用提供者: {cfg.get(cfg.onnxProvider)}"
             )
-        elif self.detector is not None:
+        elif hasattr(self,"detector") and self.detector is not None:
             InfoBar.warning("提示", "未找到模型文件, 请检查模型文件是否存在", parent=self)
             self.detector = None
             self.classes = []
