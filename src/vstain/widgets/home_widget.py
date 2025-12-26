@@ -36,6 +36,12 @@ from src.vstain.widgets.image_card_widget import ImageCardWidget
 from src.vstain.widgets.hwnd_list_widget import HwndListWidget
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
+from src.vstain.utils.logger import get_logger
+from gas.ocr_engine import OCREngine
+
+from gas.recorder.operation_player import OperationPlayer
+
+log = get_logger()
 
 
 class HomeWidget(SingleDirectionScrollArea):
@@ -143,8 +149,18 @@ class HomeWidget(SingleDirectionScrollArea):
         self.run_group_card.setTitle("执行脚本")
         self.run_group_card.setBorderRadius(8)
 
+        self.script_name = ComboBox()
+        self.script_name.addItems([str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]])
+        self.script_name.setCurrentText(cfg.get(cfg.scriptName))
+        self.script_name.setFixedWidth(300)
+        self.run_group_card.addGroup(
+            icon=FluentIcon.DICTIONARY,
+            title="脚本选择",
+            content="执行测试脚本选择",
+            widget=self.script_name,
+        )
+
         self.run_btn = PrimaryPushButton("开始")
-        self.run_group_card.addGroup(icon=FluentIcon.ERASE_TOOL, title="脚本1", content="测试开发", widget=self.run_btn)
         self.run_group_card.addGroup(icon=FluentIcon.ERASE_TOOL, title="脚本1", content="测试开发", widget=self.run_btn)
 
         self.detail_label = BodyLabel("开发者: jian 邮箱: 不说了")
@@ -172,6 +188,7 @@ class HomeWidget(SingleDirectionScrollArea):
         self.onnx_provider_combox.currentTextChanged.connect(
             lambda: cfg.set(cfg.onnxProvider, self.onnx_provider_combox.text())
         )
+        self.script_name.currentTextChanged.connect(lambda: cfg.set(cfg.scriptName, self.script_name.text()))
         self.run_btn.clicked.connect(self.run_script)
 
     def udpate_cfg(self):
@@ -204,4 +221,27 @@ class HomeWidget(SingleDirectionScrollArea):
         widget.show()
 
     def run_script(self):
-        InfoBar.success(title="成功", content=f"执行完成: {"script_path"}", parent=self, duration=2000)
+        log.debug("ocr engine init")
+        engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname),1,False)
+        log.debug(f"ocr engine init done")
+
+        log.debug("operation player init")
+        player = OperationPlayer(engine.device)
+        player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
+
+        flag = False
+
+        while True:
+            engine.click_text("再次进行")
+            time.sleep(1)
+
+            if engine.click_text("开始挑战"):
+                flag = True
+            time.sleep(1)
+
+            if flag and engine.exist_text("驱离所有敌人"):
+                flag = False
+                log.debug(f"开始执行脚本: {cfg.get(cfg.scriptName)}")
+                player.replay()
+
+            time.sleep(1)

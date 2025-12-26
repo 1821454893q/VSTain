@@ -31,7 +31,7 @@ from gas.util.keymouse_util import KeyMouseUtil
 from gas.cons.key_code import KeyCode, get_windows_keycode
 
 from src.vstain.utils.logger import get_logger
-from src.vstain.utils.operation_recorder import OperationRecorder
+from gas.recorder.operation_recorder import OperationRecorder
 
 log = get_logger()
 

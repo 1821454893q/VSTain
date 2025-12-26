@@ -372,7 +372,7 @@ wheels = [
 [[package]]
 name = "gas"
 version = "1.0.0"
-source = { git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.6#99cad91de122760e4729a482af8a3d5588a91972" }
+source = { git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.8#486ba6529782bce2fe8ae26b84f62a409cf786c2" }
 dependencies = [
     { name = "dxcam" },
     { name = "matplotlib" },
@@ -4468,7 +4468,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "gas", git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.6" },
+    { name = "gas", git = "https://github.com/1821454893q/game_ocr_script.git?rev=v0.1.8" },
     { name = "onnxruntime-directml", specifier = ">=1.23.0" },
     { name = "opencv-python", specifier = ">=4.12.0.88" },
     { name = "pyqt-fluent-widgets", specifier = "==1.9.2" },

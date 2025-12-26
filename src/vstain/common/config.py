@@ -43,6 +43,8 @@ class Config(qf.QConfig):
     onnxModelInput = qf.ConfigItem(group="ModelConfig", name="onnxModelInput", default=640)
     onnxProvider = qf.ConfigItem(group="ModelConfig", name="onnxProvider", default="CPUExecutionProvider")
 
+    scriptName = qf.ConfigItem(group="AuthScript", name="scriptName", default="")
+
 
 cfg = Config()
 qf.qconfig.load(str(RESOURCE_DIR / "config_params.json"), cfg)
