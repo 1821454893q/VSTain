@@ -30,7 +30,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from src.vstain.config.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
+from src.vstain.common.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
 from src.vstain.utils.platform import is_win11
 from src.vstain.widgets.image_card_widget import ImageCardWidget
 from src.vstain.widgets.hwnd_list_widget import HwndListWidget

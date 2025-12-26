@@ -13,8 +13,8 @@ from PyQt5.QtCore import QEventLoop
 import re  # 用于清理非法字符
 import os
 
-from vstain.common.cons import SPECIAL_KEY_MAP
-from vstain.config.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
+from src.vstain.common.cons import SPECIAL_KEY_MAP
+from src.vstain.common.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
 from enum import IntEnum
@@ -31,7 +31,7 @@ from gas.util.keymouse_util import KeyMouseUtil
 from gas.cons.key_code import KeyCode, get_windows_keycode
 
 from src.vstain.utils.logger import get_logger
-from vstain.utils.operation_recorder import OperationRecorder
+from src.vstain.utils.operation_recorder import OperationRecorder
 
 log = get_logger()
 
@@ -358,7 +358,7 @@ class ImageCardWidget(qfr.FramelessWindow):
 
         self._setup_ui()
         self._connect_signals()
-
+        self._stop_capture_loop = False
         self.loop_thread = threading.Thread(target=self._capture_loop, daemon=True)
         self.loop_thread.start()
 
@@ -456,7 +456,7 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.status_label.setWordWrap(True)
 
         self.image_label = ZoomableImageLabel(self)  # ← 传递self作为parent
-        self.image_label.setMinimumSize(800, 600)  # 给个默认大小
+        self.image_label.setMinimumSize(1000, 600)  # 给个默认大小
 
         layout.addLayout(ctrl)
         layout.addWidget(self.status_label)
@@ -628,6 +628,9 @@ class ImageCardWidget(qfr.FramelessWindow):
         last_save_time = 0  # 上一次保存时间
 
         while True:
+            if self._stop_capture_loop:  # 停止循环
+                break
+
             if self.is_paused:
                 time.sleep(0.1)
                 continue
@@ -746,4 +749,5 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.image_label.setPixmap(pixmap)
 
     def closeEvent(self, a0):
+        self._stop_capture_loop = True
         return super().closeEvent(a0)

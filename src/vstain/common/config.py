@@ -3,7 +3,7 @@ from enum import Enum
 import qfluentwidgets as qf
 import PyQt5.QtCore as qc
 import PyQt5.QtGui as qg
-from src.vstain.config.settings import QT_QSS_DIR, RESOURCE_DIR
+from src.vstain.common.settings import QT_QSS_DIR, RESOURCE_DIR
 
 
 class Language(Enum):

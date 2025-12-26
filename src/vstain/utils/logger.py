@@ -5,7 +5,7 @@ import json
 import os
 
 import toml
-from ..config import settings
+from src.vstain.common import settings
 from typing import Dict, Any
 
 

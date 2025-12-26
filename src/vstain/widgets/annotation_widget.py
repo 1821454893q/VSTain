@@ -38,7 +38,7 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from src.vstain.config.settings import PROJECT_ROOT, MODULES_DIR
+from src.vstain.common.settings import PROJECT_ROOT, MODULES_DIR
 from src.vstain.utils.logger import get_logger
 from src.vstain.common.style_sheet import StyleSheet
 from gas.util.onnx_util import YOLOONNXDetector

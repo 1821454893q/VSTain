@@ -12,8 +12,8 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import FluentIcon as FIF, SystemThemeListener
 
-from vstain.widgets.annotation_widget import AnnotationWidget
-from src.vstain.config.settings import WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
+from src.vstain.widgets.annotation_widget import AnnotationWidget
+from src.vstain.common.settings import WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
 from src.vstain.widgets import HomeWidget, SettingsWidget, WindowFeatureCaptureWidget
 from src.vstain.common.config import cfg
 

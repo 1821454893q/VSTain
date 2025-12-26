@@ -3,13 +3,13 @@ from enum import Enum
 
 from qfluentwidgets import StyleSheetBase, Theme, isDarkTheme, qconfig
 
-from vstain.config.settings import QT_QSS_DIR
+from src.vstain.common.settings import QT_QSS_DIR
 
 
 class StyleSheet(StyleSheetBase, Enum):
     """Style sheet"""
 
-    DEFUALT = "defualt"
+    DEFAULT = "default"
     HWND_LIST_WIDGET = "hwnd_list_widget"
     IMAGE_CARD_WIDGET = "image_card_widget"
     HOME_WIDGET = "home_widget"

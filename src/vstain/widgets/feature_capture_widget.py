@@ -46,7 +46,7 @@ from gas.util.screenshot_util import screenshot
 from gas.util.img_util import bgr2rgb
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
-from src.vstain.config.settings import RESOURCE_DIR
+from src.vstain.common.settings import RESOURCE_DIR
 from src.vstain.utils.logger import get_logger
 
 log = get_logger()
