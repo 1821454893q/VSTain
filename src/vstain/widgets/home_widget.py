@@ -38,7 +38,7 @@ from src.vstain.widgets.hwnd_list_widget import HwndListWidget
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
 from src.vstain.utils.logger import get_logger
-from gas.ocr_engine import OCREngine
+from gas.ocr_engine import OCREngine, TextAction
 
 from gas.recorder.operation_player import OperationPlayer
 
@@ -235,33 +235,38 @@ class HomeWidget(SingleDirectionScrollArea):
             self.run_btn.setText("开始")
             self._pause_scripts = True
 
-
     def test_script(self):
         log.debug("ocr engine init")
         engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
         log.debug(f"ocr engine init done")
 
         log.debug("operation player init")
-        player = OperationPlayer(engine.device)
-        player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
+        self.player = OperationPlayer(engine.device)
+        self.player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
 
-        flag = False
+        self.flag = False
+
+        action = [
+            TextAction("再次进行", lambda x, y, t, o: o.click(x, y)),
+            TextAction("开始挑战", self.kaishi),
+            TextAction("驱离所有敌人", self.qili),
+        ]
 
         while True:
             if self._pause_scripts:
                 time.sleep(1)
                 continue
 
-            engine.click_text("再次进行")
+            engine.process_texts(action)
             time.sleep(1)
 
-            if engine.click_text("开始挑战"):
-                flag = True
-            time.sleep(1)
+    def qili(self, x, y, t, o: OCREngine):
+        if not self.flag:
+            return
+        self.flag = False
+        log.debug(f"开始执行脚本: {cfg.get(cfg.scriptName)}")
+        self.player.replay()
 
-            if flag and engine.exist_text("驱离所有敌人"):
-                flag = False
-                log.debug(f"开始执行脚本: {cfg.get(cfg.scriptName)}")
-                player.replay()
-
-            time.sleep(1)
+    def kaishi(self, x, y, t, o: OCREngine):
+        o.click(x, y)
+        self.flag = True

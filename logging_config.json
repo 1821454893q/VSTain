@@ -3,7 +3,7 @@
     "disable_existing_loggers": false,
     "formatters": {
         "default": {
-            "format": "[%(levelname)s]%(asctime)s - %(filename)s:%(lineno)d %(message)s"
+            "format": "VSTain [0.0.1] - %(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
         }
     },
     "handlers": {
@@ -14,42 +14,50 @@
             "stream": "ext://sys.stdout"
         },
         "file_debug": {
-            "class": "logging.FileHandler",
+            "class": "logging.TimestampRotatingFileHandler",
             "level": "DEBUG",
             "formatter": "default",
-            "filename": "logs/debug.log",
+            "filename": "D:\\Code\\Python\\VSTain\\logs\\debug\\debug.log",
+            "maxBytes": 10485760,
+            "backupCount": 10,
             "encoding": "utf-8"
         },
         "file_info": {
-            "class": "logging.FileHandler",
+            "class": "logging.TimestampRotatingFileHandler",
             "level": "INFO",
             "formatter": "default",
-            "filename": "logs/info.log",
+            "filename": "D:\\Code\\Python\\VSTain\\logs\\info\\info.log",
+            "maxBytes": 10485760,
+            "backupCount": 10,
             "encoding": "utf-8"
         },
         "file_warn": {
-            "class": "logging.FileHandler",
-            "level": "WARN",
+            "class": "logging.TimestampRotatingFileHandler",
+            "level": "WARNING",
             "formatter": "default",
-            "filename": "logs/warn.log",
+            "filename": "D:\\Code\\Python\\VSTain\\logs\\warn\\warn.log",
+            "maxBytes": 10485760,
+            "backupCount": 10,
             "encoding": "utf-8"
         },
         "file_error": {
-            "class": "logging.FileHandler",
+            "class": "logging.TimestampRotatingFileHandler",
             "level": "ERROR",
             "formatter": "default",
-            "filename": "logs/error.log",
+            "filename": "D:\\Code\\Python\\VSTain\\logs\\error\\error.log",
+            "maxBytes": 10485760,
+            "backupCount": 10,
             "encoding": "utf-8"
         }
     },
     "loggers": {
-        "app": {
+        "simple_logger.vstain": {
             "level": "DEBUG",
             "handlers": [
                 "console",
                 "file_debug",
-                "file_warn",
                 "file_info",
+                "file_warn",
                 "file_error"
             ],
             "propagate": false
