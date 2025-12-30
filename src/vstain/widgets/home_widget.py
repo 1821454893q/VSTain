@@ -118,9 +118,11 @@ class HomeWidget(SingleDirectionScrollArea):
         )
 
         self.onnx_model_name = ComboBox()
-        self.onnx_model_name.addItems(
-            [str(p.name) for p in Path(MODULES_DIR).iterdir() if p.suffix.lower() in [".onnx"]]
-        )
+        model_name_list = [str(p.name) for p in Path(MODULES_DIR).iterdir() if p.suffix.lower() in [".onnx"]]
+        self.onnx_model_name.addItems(model_name_list)
+        if len(model_name_list) == 1:
+            cfg.set(cfg.onnxModelName, model_name_list[0])
+
         self.onnx_model_name.setCurrentText(cfg.get(cfg.onnxModelName))
         self.onnx_model_name.setFixedWidth(300)
         self.set_group_card.addGroup(
@@ -157,7 +159,11 @@ class HomeWidget(SingleDirectionScrollArea):
         self.run_group_card.setBorderRadius(8)
 
         self.script_name = ComboBox()
-        self.script_name.addItems([str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]])
+        script_name_list = [str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]]
+        self.script_name.addItems(script_name_list)
+        if len(script_name_list) == 1:
+            cfg.set(cfg.scriptName, script_name_list[0])
+
         self.script_name.setCurrentText(cfg.get(cfg.scriptName))
         self.script_name.setFixedWidth(300)
         self.run_group_card.addGroup(
@@ -230,6 +236,9 @@ class HomeWidget(SingleDirectionScrollArea):
     def run_script(self):
         if self._pause_scripts:
             self.run_btn.setText("暂停")
+            log.debug(f"operation player init. scirpt nmae:{cfg.get(cfg.scriptName)}")
+            self.player = OperationPlayer(self.engine.device)
+            self.player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
             self._pause_scripts = False
         else:
             self.run_btn.setText("开始")
@@ -237,15 +246,9 @@ class HomeWidget(SingleDirectionScrollArea):
 
     def test_script(self):
         log.debug("ocr engine init")
-        engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
+        self.engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
         log.debug(f"ocr engine init done")
-
-        log.debug("operation player init")
-        self.player = OperationPlayer(engine.device)
-        self.player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
-
         self.flag = False
-
         action = [
             TextAction("再次进行", lambda x, y, t, o: o.click(x, y)),
             TextAction("开始挑战", self.kaishi),
@@ -257,7 +260,7 @@ class HomeWidget(SingleDirectionScrollArea):
                 time.sleep(1)
                 continue
 
-            engine.process_texts(action)
+            self.engine.process_texts(action)
             time.sleep(1)
 
     def qili(self, x, y, t, o: OCREngine):

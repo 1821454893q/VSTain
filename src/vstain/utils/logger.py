@@ -1,5 +1,5 @@
 import logging
-from gas.simple_logger import create_logger, SimpleLogger
+from gas.simple_logger import create_logger
 from src.vstain.common.settings import LOG_CONFIG_FILE, LOG_DIR, PYPROJECT_FILE
 
 # 全局实例
