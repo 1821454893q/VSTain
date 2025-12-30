@@ -10,6 +10,8 @@
 - 🧠 ONNX模型支持（DirectML后端） - 利用 ONNX Runtime DirectML 在 Windows 上实现高效的模型推理
 - ⚙️ 灵活的配置选项 - 提供丰富的配置选项以满足不同用户需求
 - 🔧 窗口句柄管理 - 能够获取和管理 Windows 系统中的窗口句柄信息
+- 📐 图像标注工具 - 提供完善的图像标注功能，支持YOLO格式导入导出
+- 🎯 通用图像查看器 - 支持缩放、平移、十字准星等高级功能
 - 🤖 自动化脚本执行 - 支持创建和执行基于视觉识别的自动化脚本
 
 ## 项目结构
@@ -22,27 +24,31 @@ VSTain/
 │       ├── app.py                # 应用入口点
 │       ├── common/               # 公共模块
 │       │   ├── config.py         # 全局配置
+│       │   ├── cons.py           # 常量定义
+│       │   ├── settings.py       # 应用配置常量
 │       │   └── style_sheet.py    # 样式表
-│       ├── config/               # 配置模块
+│       ├── components/           # 可复用组件
 │       │   ├── __init__.py
-│       │   └── settings.py       # 应用配置常量
+│       │   └── universal_image_viewer.py # 通用图像查看器
 │       ├── utils/                # 工具函数
 │       │   ├── __init__.py
 │       │   ├── logger.py         # 日志工具
-│       │   └── platform.py       # 平台相关工具
+│       │   ├── platform.py       # 平台相关工具
+│       │   └── __init__.py
 │       ├── widgets/              # UI 组件
 │       │   ├── __init__.py
-│       │   ├── home_widget.py           # 主页组件
-│       │   ├── image_card_widget.py     # 图片卡片组件
-│       │   ├── settings_widget.py       # 设置页面组件
-│       │   ├── hwnd_list_widget.py      # 窗口列表组件
-│       │   ├── annotation_widget.py     # 注释组件
-│       │   └── feature_capture_widget.py # 特征捕获组件
+│       │   ├── annotation_widget.py         # 图像标注组件
+│       │   ├── feature_capture_widget.py  # 特征捕获组件
+│       │   ├── home_widget.py             # 主页组件
+│       │   ├── hwnd_list_widget.py        # 窗口列表组件
+│       │   ├── image_card_widget.py       # 图片卡片组件
+│       │   └── settings_widget.py         # 设置页面组件
 │       └── windows/              # 窗口类
 │           ├── __init__.py
 │           └── main_window.py    # 主窗口
 ├── resource/                     # 资源文件
 ├── logs/                         # 日志文件
+├── tests/                        # 测试文件
 ├── main.py                       # 入口点
 ├── pyproject.toml                # 项目配置
 └── README.md
@@ -117,14 +123,11 @@ uv run main.py
 
 1. **app.py** - 应用程序入口点，负责初始化和启动应用
 2. **widgets/** - 所有的UI组件，每个组件负责特定的功能模块
-3. **windows/** - 窗口管理模块，包含主窗口和其他窗口类
-4. **utils/** - 工具函数模块，提供日志、平台检测等通用功能
-5. **config/** - 配置管理模块，包括设置和全局配置
-6. **common/** - 公共资源，如样式表和共享配置
-
-### 命名规范
-
-项目遵循严格的命名规范，请参考 [NAMING_CONVENTIONS.md](NAMING_CONVENTIONS.md) 获取详细信息。
+3. **components/** - 可复用的UI组件，如通用图像查看器
+4. **windows/** - 窗口管理模块，包含主窗口和其他窗口类
+5. **utils/** - 工具函数模块，提供日志、平台检测等通用功能
+6. **common/** - 公共模块，包含配置、常量和样式表
+7. **resource/** - 资源文件，存放图标、模型、脚本等资源文件
 
 ### 开发环境设置
 
@@ -149,11 +152,22 @@ uv run main.py
 3. **ONNX模型集成**：
    - 支持多种ONNX格式的模型
    - 可选择不同的执行提供者（CPU、CUDA、DirectML）
+   
+4. **图像标注工具**：
+   - 支持手动绘制边界框进行标注
+   - 支持自动检测模型辅助标注
+   - 支持YOLO格式导入导出
+   - 支持数据集组织和管理
 
 ### 配置说明
 
 应用的主要配置存储在配置文件中，用户可以通过设置界面或直接修改配置进行自定义。
 
+### 开发规范
+
+- 项目名称应体现个人标识 `tainanle`，增强唯一性
+- 代码风格遵循PEP8规范
+- 组件命名清晰，便于理解功能
 
 ## 许可证
 
