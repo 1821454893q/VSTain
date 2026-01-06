@@ -257,11 +257,11 @@ class HomeWidget(SingleDirectionScrollArea):
 
         while True:
             if self._pause_scripts:
-                time.sleep(1)
+                time.sleep(1.5)
                 continue
 
             self.engine.process_texts(action)
-            time.sleep(1)
+            time.sleep(1.5)
 
     def qili(self, x, y, t, o: OCREngine):
         if not self.flag:

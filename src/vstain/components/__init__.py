@@ -1,15 +1,4 @@
-"""通用组件模块"""
+# src/vstain/components/__init__.py
+from .image_viewer import ImageViewer, ViewerTool, Region
 
-from vstain.components.universal_image_viewer import (
-    UniversalImageViewer,
-    ImageFeature,
-    InteractionMode,
-    CoordinateSystem,
-)
-
-__all__ = [
-    "UniversalImageViewer",
-    "ImageFeature",
-    "InteractionMode",
-    "CoordinateSystem",
-]
+__all__ = ["ImageViewer", "ViewerTool", "Region"]
