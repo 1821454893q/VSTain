@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget, QDialog, QLabel, 
 from PyQt5.QtGui import QPainter, QPainterPath, QLinearGradient, QColor, QBrush
 
 from gas.util.hwnd_util import get_hwnd_by_class_and_title, WindowInfo, get_window_wh
+from gas.util.wrap_util import timeit
 from qfluentwidgets import (
     BodyLabel,
     ComboBox,
@@ -174,6 +175,7 @@ class HomeWidget(SingleDirectionScrollArea):
         )
 
         self.run_btn = PrimaryPushButton("开始")
+        self.run_btn.setEnabled(False)
         self.run_group_card.addGroup(icon=FluentIcon.ERASE_TOOL, title="脚本1", content="测试开发", widget=self.run_btn)
 
         self.detail_label = BodyLabel("开发者: jian 邮箱: 不说了")
@@ -249,19 +251,14 @@ class HomeWidget(SingleDirectionScrollArea):
         self.engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
         log.debug(f"ocr engine init done")
         self.flag = False
-        action = [
-            TextAction("再次进行", lambda x, y, t, o: o.click(x, y)),
-            TextAction("开始挑战", self.kaishi),
-            TextAction("驱离所有敌人", self.qili),
-        ]
+        self.run_btn.setEnabled(True)
 
         while True:
             if self._pause_scripts:
-                time.sleep(1.5)
+                time.sleep(2)
                 continue
-
-            self.engine.process_texts(action)
-            time.sleep(1.5)
+            self.run()
+            time.sleep(2)
 
     def qili(self, x, y, t, o: OCREngine):
         if not self.flag:
@@ -273,3 +270,12 @@ class HomeWidget(SingleDirectionScrollArea):
     def kaishi(self, x, y, t, o: OCREngine):
         o.click(x, y)
         self.flag = True
+
+    def run(self):
+        action = [
+            TextAction("再次进行", lambda x, y, t, o: o.click(x, y)),
+            TextAction("开始挑战", self.kaishi),
+            TextAction("驱离所有敌人", self.qili),
+            TextAction("避险", self.qili),
+        ]
+        self.engine.process_texts(action)

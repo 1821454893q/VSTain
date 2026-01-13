@@ -40,3 +40,5 @@ resource/config_params.json
 resource/scripts
 
 logging_config.json 
+feature_templates.json
+tests/eg
