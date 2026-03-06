@@ -261,8 +261,10 @@ class HomeWidget(SingleDirectionScrollArea):
             self.run_btn.setText("暂停")
             self._pause_scripts = False
         else:
-            self.run_btn.setText("开始")
             self._pause_scripts = True
+            if self._flow_executor:
+                self._flow_executor.request_stop()
+            self.run_btn.setText("开始")
 
     @pyqtSlot(bool)
     def _set_run_btn_enabled(self, enabled: bool):
@@ -280,6 +282,8 @@ class HomeWidget(SingleDirectionScrollArea):
                 continue
             try:
                 self._flow_executor.execute()
+            except InterruptedError:
+                log.info("流程图执行已暂停")
             except Exception as e:
                 log.error(f"流程图执行出错: {e}")
             time.sleep(2)

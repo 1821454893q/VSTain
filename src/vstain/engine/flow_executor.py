@@ -40,8 +40,13 @@ class FlowExecutor:
         self._player_cache: Dict[str, OperationPlayer] = {}
         self._node_callback = node_callback
         self.step_delay = step_delay
+        self._stop_flag = False
+
+    def request_stop(self):
+        self._stop_flag = True
 
     def execute(self):
+        self._stop_flag = False
         self._ocr_results: List[OCRItem] = []
         self._current_match: Optional[OCRItem] = None
         self._step_count = 0
@@ -54,6 +59,8 @@ class FlowExecutor:
         self._exec_node(start)
 
     def _exec_node(self, node: FlowNode):
+        if self._stop_flag:
+            raise InterruptedError("执行已停止")
         self._step_count += 1
         if self._step_count > MAX_STEPS:
             log.warning(f"执行步数超过 {MAX_STEPS}，强制终止")

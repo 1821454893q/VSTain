@@ -13,11 +13,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QSplitter,
     QFileDialog,
-    QSpinBox,
-    QScrollArea,
     QFormLayout,
-    QTextEdit,
-    QSizePolicy,
 )
 from qfluentwidgets import (
     BodyLabel,
@@ -29,11 +25,17 @@ from qfluentwidgets import (
     isDarkTheme,
     InfoBar,
     PrimaryPushButton,
+    PushButton,
+    DoubleSpinBox,
+    SpinBox,
+    ScrollArea,
+    TextEdit,
 )
 
 from gas.ocr_engine import OCREngine
 from src.vstain.engine.flow_executor import FlowExecutor
 from src.vstain.common.config import cfg
+from src.vstain.common.cons import SPECIAL_KEY_MAP
 
 from src.vstain.models.flow_model import (
     FlowChart,
@@ -47,7 +49,7 @@ from src.vstain.components.flow_editor import (
     FlowCanvas,
     FlowMinimap,
 )
-from src.vstain.common.settings import FLOWS_DIR
+from src.vstain.common.settings import FLOWS_DIR, SCRIPTS_DIR
 
 FLOWS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -70,9 +72,52 @@ _TOOLBAR_NODES = [
 
 
 # ================================================================
+#  按键捕获按钮
+# ================================================================
+class _KeyCaptureButton(PushButton):
+    key_captured = pyqtSignal(str)
+
+    def __init__(self, current_key="", parent=None):
+        super().__init__(parent)
+        self._current_key = current_key
+        self._listening = False
+        self._update_text()
+        self.clicked.connect(self._start_listening)
+
+    def _update_text(self):
+        self.setText(self._current_key if self._current_key else "点击录入按键...")
+
+    def _start_listening(self):
+        self._listening = True
+        self.setText("按下任意键...")
+        self.grabKeyboard()
+
+    def keyPressEvent(self, event):
+        if not self._listening:
+            super().keyPressEvent(event)
+            return
+        kc = SPECIAL_KEY_MAP.get(event.key())
+        if kc is not None:
+            self._current_key = kc.name
+            self._listening = False
+            self.releaseKeyboard()
+            self._update_text()
+            self.key_captured.emit(self._current_key)
+        else:
+            self.setText("不支持该键，再试...")
+
+    def focusOutEvent(self, event):
+        if self._listening:
+            self._listening = False
+            self.releaseKeyboard()
+            self._update_text()
+        super().focusOutEvent(event)
+
+
+# ================================================================
 #  属性面板
 # ================================================================
-class _PropertiesPanel(QScrollArea):
+class _PropertiesPanel(ScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
@@ -133,9 +178,10 @@ class _PropertiesPanel(QScrollArea):
             self._add_line("variable", "变量名", p)
             self._add_line("value", "值", p)
         elif nt == NodeType.SCRIPT_REPLAY:
-            self._add_line("script_name", "脚本文件", p)
+            script_name_list = [p.name for p in SCRIPTS_DIR.iterdir() if p.suffix.lower() == ".json"]
+            self._add_combo("script_name", "脚本文件", p, script_name_list)
         elif nt == NodeType.KEY_INPUT:
-            self._add_line("key", "按键(KeyCode名)", p)
+            self._add_key_capture("key", "按键", p)
             self._add_combo("action", "动作", p, ["tap", "down", "up"])
         elif nt == NodeType.SWIPE:
             self._add_int("x1", "起点X", p, 0, 9999)
@@ -168,14 +214,12 @@ class _PropertiesPanel(QScrollArea):
     def _add_combo(self, key, label, props, items):
         w = ComboBox()
         w.addItems(items)
-        w.setCurrentText(str(props.get(key, items[0])))
         w.currentTextChanged.connect(lambda t, k=key: self._set(k, t))
+        w.setCurrentText(str(props.get(key, items[0])))
         self._layout.addRow(BodyLabel(label), w)
 
     def _add_float(self, key, label, props, lo, hi, step):
-        from PyQt5.QtWidgets import QDoubleSpinBox
-
-        w = QDoubleSpinBox()
+        w = DoubleSpinBox()
         w.setRange(lo, hi)
         w.setSingleStep(step)
         w.setValue(float(props.get(key, lo)))
@@ -183,10 +227,15 @@ class _PropertiesPanel(QScrollArea):
         self._layout.addRow(BodyLabel(label), w)
 
     def _add_int(self, key, label, props, lo=0, hi=99999):
-        w = QSpinBox()
+        w = SpinBox()
         w.setRange(lo, hi)
         w.setValue(int(props.get(key, lo)))
         w.valueChanged.connect(lambda v, k=key: self._set(k, v))
+        self._layout.addRow(BodyLabel(label), w)
+
+    def _add_key_capture(self, key, label, props):
+        w = _KeyCaptureButton(str(props.get(key, "")))
+        w.key_captured.connect(lambda name, k=key: self._set(k, name))
         self._layout.addRow(BodyLabel(label), w)
 
     def _set(self, key, val):
@@ -206,7 +255,7 @@ class _VariableWatch(QWidget):
         title = BodyLabel("变量监视")
         title.setAlignment(Qt.AlignCenter)
         lay.addWidget(title)
-        self._text = QTextEdit()
+        self._text = TextEdit()
         self._text.setReadOnly(True)
         self._text.setMaximumHeight(140)
         lay.addWidget(self._text)
@@ -229,9 +278,12 @@ class _DebugThread(QThread):
         super().__init__(parent)
         self._chart = chart
         self._stop_flag = False
+        self._executor: FlowExecutor | None = None
 
     def request_stop(self):
         self._stop_flag = True
+        if self._executor:
+            self._executor.request_stop()
 
     def run(self):
         try:
@@ -247,17 +299,21 @@ class _DebugThread(QThread):
                 node_callback=self._on_node,
                 step_delay=0.35,
             )
+            self._executor = executor
             executor.execute()
             self.variables_updated.emit(dict(executor.variables))
         except Exception as e:
             self.debug_error.emit(str(e))
         finally:
+            self._executor = None
             self.debug_finished.emit()
 
     def _on_node(self, node_id: str):
         if self._stop_flag:
             raise InterruptedError("调试已手动停止")
         self.node_highlight.emit(node_id)
+        if self._executor:
+            self.variables_updated.emit(dict(self._executor.variables))
 
 
 # ================================================================
