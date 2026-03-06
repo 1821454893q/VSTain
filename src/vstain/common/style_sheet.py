@@ -15,6 +15,7 @@ class StyleSheet(StyleSheetBase, Enum):
     HOME_WIDGET = "home_widget"
     ANNOTATION_WIDGET = "annotation_widget"
     FEATURE_CAPTURE_WIDGET = "feature_capture_widget"
+    THEMED_SPLITTER = "themed_splitter"
 
     def path(self, theme=Theme.AUTO):
         theme = qconfig.theme if theme == Theme.AUTO else theme

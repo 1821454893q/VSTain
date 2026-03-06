@@ -11,7 +11,6 @@ from PyQt5.QtWidgets import (
     QWidget,
     QHBoxLayout,
     QVBoxLayout,
-    QSplitter,
     QFileDialog,
     QFormLayout,
 )
@@ -22,13 +21,12 @@ from qfluentwidgets import (
     ToolButton,
     SwitchButton,
     ComboBox,
-    isDarkTheme,
     InfoBar,
     PrimaryPushButton,
     PushButton,
     DoubleSpinBox,
     SpinBox,
-    ScrollArea,
+    SingleDirectionScrollArea,
     TextEdit,
 )
 
@@ -49,6 +47,7 @@ from src.vstain.components.flow_editor import (
     FlowCanvas,
     FlowMinimap,
 )
+from src.vstain.components.themed_splitter import ThemedSplitter
 from src.vstain.common.settings import FLOWS_DIR, SCRIPTS_DIR
 
 FLOWS_DIR.mkdir(parents=True, exist_ok=True)
@@ -117,10 +116,11 @@ class _KeyCaptureButton(PushButton):
 # ================================================================
 #  属性面板
 # ================================================================
-class _PropertiesPanel(ScrollArea):
+class _PropertiesPanel(SingleDirectionScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setMinimumWidth(240)
         self.setMaximumWidth(340)
         self._node = None
@@ -129,6 +129,7 @@ class _PropertiesPanel(ScrollArea):
         self._layout.setContentsMargins(12, 8, 12, 8)
         self._layout.setSpacing(6)
         self.setWidget(self._inner)
+        self.enableTransparentBackground()
         self._show_empty()
 
     def _clear(self):
@@ -400,7 +401,7 @@ class ScriptFlowWidget(QWidget):
         root.addWidget(tb)
 
         # ---- 主体 ----
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = ThemedSplitter(Qt.Horizontal, self)
         splitter.addWidget(self._canvas)
 
         right = QWidget()

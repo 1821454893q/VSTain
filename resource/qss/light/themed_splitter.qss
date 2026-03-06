@@ -1,0 +1,9 @@
+ThemedSplitterHandle {
+    background-color: #E4E4E8;
+    qproperty-gripColor: #AFAFB4;
+    qproperty-gripHoverColor: #78AADC;
+}
+
+ThemedSplitterHandle:hover {
+    background-color: rgba(33, 150, 243, 40);
+}
