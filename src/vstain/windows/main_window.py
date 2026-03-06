@@ -14,7 +14,7 @@ from qfluentwidgets import FluentIcon as FIF, SystemThemeListener
 
 from src.vstain.widgets.annotation_widget import AnnotationWidget
 from src.vstain.common.settings import WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH
-from src.vstain.widgets import HomeWidget, SettingsWidget, WindowFeatureCaptureWidget
+from src.vstain.widgets import HomeWidget, SettingsWidget, WindowFeatureCaptureWidget, ScriptFlowWidget
 from src.vstain.common.config import cfg
 
 from src.vstain.utils.logger import get_logger
@@ -44,10 +44,12 @@ class MainWindow(MSFluentWindow):
         self.featureCaptureInterface = WindowFeatureCaptureWidget(
             "teatureCapture Interface", self
         )
+        self.scriptFlowInterface = ScriptFlowWidget("scriptFlow Interface", self)
 
         self.addSubInterface(self.homeInterface, FIF.HOME, "主页", FIF.HOME_FILL)
         self.addSubInterface(self.annotationInterface, FIF.TAG, "图片标注")
         self.addSubInterface(self.featureCaptureInterface, FIF.PAUSE, "特征捕获")
+        self.addSubInterface(self.scriptFlowInterface, FIF.COMMAND_PROMPT, "脚本编排")
 
         self.navigationInterface.addItem(
             routeKey="theme",

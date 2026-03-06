@@ -6,6 +6,7 @@ from .settings_widget import SettingsWidget
 from .hwnd_list_widget import HwndListWidget
 from .annotation_widget import AnnotationWidget
 from .feature_capture_widget import WindowFeatureCaptureWidget
+from .script_flow_widget import ScriptFlowWidget
 
 __all__ = [
     "HomeWidget",
@@ -14,4 +15,5 @@ __all__ = [
     "HwndListWidget",
     "AnnotationWidget",
     "WindowFeatureCaptureWidget",
+    "ScriptFlowWidget",
 ]
