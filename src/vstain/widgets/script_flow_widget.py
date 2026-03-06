@@ -1,42 +1,58 @@
-"""脚本流程图编辑器页面 - 工具栏 + 画布 + 属性面板"""
+"""脚本流程编排页面
 
+包含: 工具栏(节点创建 + 操作按钮) / 画布 / 属性面板 / 变量监视 / 小地图 / 调试
+"""
+
+import json
 from pathlib import Path
-from typing import Optional
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, pyqtSlot
 from PyQt5.QtWidgets import (
     QWidget,
     QHBoxLayout,
     QVBoxLayout,
-    QFileDialog,
     QSplitter,
+    QFileDialog,
+    QSpinBox,
+    QScrollArea,
+    QFormLayout,
+    QTextEdit,
+    QSizePolicy,
 )
 from qfluentwidgets import (
-    PrimaryPushButton,
-    PushButton,
-    FluentIcon,
     BodyLabel,
-    ComboBox,
+    FluentIcon,
     LineEdit,
-    SwitchButton,
-    InfoBar,
-    InfoBarPosition,
     ToolButton,
-    DoubleSpinBox,
+    SwitchButton,
+    ComboBox,
+    isDarkTheme,
+    InfoBar,
+    PrimaryPushButton,
 )
 
-from src.vstain.models.flow_model import FlowChart, FlowNode, NodeType, NODE_TYPE_LABELS
-from src.vstain.components.flow_editor import FlowScene, FlowCanvas
-from src.vstain.common.settings import SCRIPTS_DIR, RESOURCE_DIR
-from src.vstain.utils.logger import get_logger
+from gas.ocr_engine import OCREngine
+from src.vstain.engine.flow_executor import FlowExecutor
+from src.vstain.common.config import cfg
 
-log = get_logger()
+from src.vstain.models.flow_model import (
+    FlowChart,
+    FlowNode,
+    NodeType,
+    NODE_TYPE_LABELS,
+    NODE_TYPE_COLORS,
+)
+from src.vstain.components.flow_editor import (
+    FlowScene,
+    FlowCanvas,
+    FlowMinimap,
+)
+from src.vstain.common.settings import FLOWS_DIR
 
-FLOWS_DIR = RESOURCE_DIR / "flows"
+FLOWS_DIR.mkdir(parents=True, exist_ok=True)
 
-# 工具栏中按钮对应的节点类型及图标
 _TOOLBAR_NODES = [
-    (NodeType.START, FluentIcon.PLAY_SOLID),
+    (NodeType.START, FluentIcon.PLAY),
     (NodeType.OCR_SCAN, FluentIcon.SEARCH),
     (NodeType.TEXT_MATCH, FluentIcon.FONT),
     (NodeType.CONDITION, FluentIcon.FILTER),
@@ -44,155 +60,221 @@ _TOOLBAR_NODES = [
     (NodeType.CLICK, FluentIcon.FINGERPRINT),
     (NodeType.SET_VARIABLE, FluentIcon.EDIT),
     (NodeType.SCRIPT_REPLAY, FluentIcon.VIDEO),
-    (NodeType.WAIT, FluentIcon.STOP_WATCH),
+    (NodeType.KEY_INPUT, FluentIcon.BOOK_SHELF),
+    (NodeType.SWIPE, FluentIcon.SCROLL),
+    (NodeType.WAIT, FluentIcon.HISTORY),
     (NodeType.LOG, FluentIcon.MESSAGE),
+    (NodeType.COMMENT, FluentIcon.CHAT),
+    (NodeType.SUBFLOW, FluentIcon.COMMAND_PROMPT),
 ]
 
 
 # ================================================================
 #  属性面板
 # ================================================================
-class _PropertiesPanel(QWidget):
-    """右侧节点属性编辑面板"""
-
+class _PropertiesPanel(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedWidth(260)
-        self._node: Optional[FlowNode] = None
-        self._setup_ui()
+        self.setWidgetResizable(True)
+        self.setMinimumWidth(240)
+        self.setMaximumWidth(340)
+        self._node = None
+        self._inner = QWidget()
+        self._layout = QFormLayout(self._inner)
+        self._layout.setContentsMargins(12, 8, 12, 8)
+        self._layout.setSpacing(6)
+        self.setWidget(self._inner)
+        self._show_empty()
 
-    def _setup_ui(self):
-        self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(12, 12, 12, 12)
-        self._root.setSpacing(8)
+    def _clear(self):
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-        self._title = BodyLabel("属性面板")
-        self._title.setAlignment(Qt.AlignCenter)
-        self._root.addWidget(self._title)
+    def _show_empty(self):
+        self._clear()
+        lbl = BodyLabel("选中节点以编辑属性")
+        lbl.setAlignment(Qt.AlignCenter)
+        self._layout.addRow(lbl)
 
-        self._props_container = QWidget()
-        self._props_layout = QVBoxLayout(self._props_container)
-        self._props_layout.setContentsMargins(0, 0, 0, 0)
-        self._props_layout.setSpacing(6)
-        self._root.addWidget(self._props_container)
-
-        self._root.addStretch()
-
-    # ---------- 公开 ----------
-    def set_node(self, node: Optional[FlowNode]):
+    def show_node(self, node: FlowNode):
         self._node = node
-        self._clear_props()
-        if node is None:
-            self._title.setText("未选择节点")
-            return
-        self._title.setText(NODE_TYPE_LABELS[node.node_type])
-        self._build_editors(node)
+        self._clear()
+        title = BodyLabel(NODE_TYPE_LABELS[node.node_type])
+        title.setAlignment(Qt.AlignCenter)
+        self._layout.addRow(title)
+        self._build(node)
 
-    # ---------- 构建编辑器 ----------
-    def _build_editors(self, node: FlowNode):
-        nt = node.node_type
-        if nt == NodeType.TEXT_MATCH:
-            self._add_line("匹配文本", "pattern", node)
-            self._add_switch("正则表达式", "is_regex", node)
+    def hide_node(self):
+        self._node = None
+        self._show_empty()
+
+    def _build(self, n: FlowNode):
+        nt = n.node_type
+        p = n.properties
+        if nt == NodeType.OCR_SCAN:
+            self._add_float("confidence", "置信度", p, 0.0, 1.0, 0.1)
+        elif nt == NodeType.TEXT_MATCH:
+            self._add_line("pattern", "匹配文本", p)
+            self._add_switch("is_regex", "正则匹配", p)
         elif nt == NodeType.CONDITION:
-            self._add_line("变量名", "variable", node)
-            self._add_combo(
-                "运算符", "operator", ["==", "!=", ">", "<", ">=", "<="], node
-            )
-            self._add_line("比较值", "value", node)
+            self._add_line("variable", "变量名", p)
+            self._add_combo("operator", "运算符", p, ["==", "!=", ">", "<", ">=", "<="])
+            self._add_line("value", "值", p)
         elif nt == NodeType.LOOP:
-            self._add_int_spin("最大次数 (-1=无限)", "max_iterations", node, -1, 99999)
-            self._add_line("计数器变量", "counter_variable", node)
+            self._add_int("max_iterations", "最大次数(-1=无限)", p, -1, 99999)
+            self._add_line("counter_variable", "计数变量", p)
+        elif nt == NodeType.CLICK:
+            self._add_switch("use_ocr_result", "使用 OCR 坐标", p)
+            self._add_float("x", "X", p, 0, 9999, 1)
+            self._add_float("y", "Y", p, 0, 9999, 1)
         elif nt == NodeType.SET_VARIABLE:
-            self._add_line("变量名", "variable", node)
-            self._add_line("值", "value", node)
+            self._add_line("variable", "变量名", p)
+            self._add_line("value", "值", p)
         elif nt == NodeType.SCRIPT_REPLAY:
-            self._add_combo("脚本文件", "script_name", self._script_list(), node)
+            self._add_line("script_name", "脚本文件", p)
+        elif nt == NodeType.KEY_INPUT:
+            self._add_line("key", "按键(KeyCode名)", p)
+            self._add_combo("action", "动作", p, ["tap", "down", "up"])
+        elif nt == NodeType.SWIPE:
+            self._add_int("x1", "起点X", p, 0, 9999)
+            self._add_int("y1", "起点Y", p, 0, 9999)
+            self._add_int("x2", "终点X", p, 0, 9999)
+            self._add_int("y2", "终点Y", p, 0, 9999)
+            self._add_float("duration", "持续(秒)", p, 0.01, 10, 0.1)
         elif nt == NodeType.WAIT:
-            self._add_spin("等待秒数", "seconds", node, 0.1, 60.0)
-        elif nt == NodeType.OCR_SCAN:
-            self._add_spin("置信度", "confidence", node, 0.1, 1.0)
+            self._add_float("seconds", "秒数", p, 0.1, 600, 0.5)
         elif nt == NodeType.LOG:
-            self._add_line("消息 (支持 {变量名})", "message", node)
+            self._add_line("message", "日志({var}模板)", p)
+        elif nt == NodeType.COMMENT:
+            self._add_line("text", "注释内容", p)
+        elif nt == NodeType.SUBFLOW:
+            self._add_line("flow_file", "流程图文件名", p)
 
     # ---------- 控件工厂 ----------
-    def _add_line(self, label: str, key: str, node: FlowNode):
-        lbl = BodyLabel(label)
-        edit = LineEdit()
-        edit.setText(str(node.properties.get(key, "")))
-        edit.textChanged.connect(lambda t, k=key: self._set_prop(k, t))
-        self._props_layout.addWidget(lbl)
-        self._props_layout.addWidget(edit)
+    def _add_line(self, key, label, props):
+        w = LineEdit()
+        w.setText(str(props.get(key, "")))
+        w.textChanged.connect(lambda t, k=key: self._set(k, t))
+        self._layout.addRow(BodyLabel(label), w)
 
-    def _add_combo(self, label: str, key: str, items: list, node: FlowNode):
-        lbl = BodyLabel(label)
-        cb = ComboBox()
-        cb.addItems(items)
-        cur = str(node.properties.get(key, ""))
-        if cur in items:
-            cb.setCurrentText(cur)
-        cb.currentTextChanged.connect(lambda t, k=key: self._set_prop(k, t))
-        self._props_layout.addWidget(lbl)
-        self._props_layout.addWidget(cb)
+    def _add_switch(self, key, label, props):
+        w = SwitchButton()
+        w.setChecked(bool(props.get(key, False)))
+        w.checkedChanged.connect(lambda c, k=key: self._set(k, c))
+        self._layout.addRow(BodyLabel(label), w)
 
-    def _add_switch(self, label: str, key: str, node: FlowNode):
-        lbl = BodyLabel(label)
-        sw = SwitchButton()
-        sw.setChecked(bool(node.properties.get(key, False)))
-        sw.checkedChanged.connect(lambda c, k=key: self._set_prop(k, c))
-        self._props_layout.addWidget(lbl)
-        self._props_layout.addWidget(sw)
+    def _add_combo(self, key, label, props, items):
+        w = ComboBox()
+        w.addItems(items)
+        w.setCurrentText(str(props.get(key, items[0])))
+        w.currentTextChanged.connect(lambda t, k=key: self._set(k, t))
+        self._layout.addRow(BodyLabel(label), w)
 
-    def _add_spin(self, label: str, key: str, node: FlowNode, lo: float, hi: float):
-        lbl = BodyLabel(label)
-        sb = DoubleSpinBox()
-        sb.setRange(lo, hi)
-        sb.setSingleStep(0.1)
-        sb.setDecimals(2)
-        sb.setValue(float(node.properties.get(key, lo)))
-        sb.valueChanged.connect(lambda v, k=key: self._set_prop(k, v))
-        self._props_layout.addWidget(lbl)
-        self._props_layout.addWidget(sb)
+    def _add_float(self, key, label, props, lo, hi, step):
+        from PyQt5.QtWidgets import QDoubleSpinBox
 
-    def _add_int_spin(self, label: str, key: str, node: FlowNode, lo: int, hi: int):
-        lbl = BodyLabel(label)
-        sb = DoubleSpinBox()
-        sb.setRange(lo, hi)
-        sb.setValue(int(node.properties.get(key, lo)))
-        sb.valueChanged.connect(lambda v, k=key: self._set_prop(k, v))
-        self._props_layout.addWidget(lbl)
-        self._props_layout.addWidget(sb)
+        w = QDoubleSpinBox()
+        w.setRange(lo, hi)
+        w.setSingleStep(step)
+        w.setValue(float(props.get(key, lo)))
+        w.valueChanged.connect(lambda v, k=key: self._set(k, v))
+        self._layout.addRow(BodyLabel(label), w)
 
-    # ---------- 辅助 ----------
-    def _set_prop(self, key: str, value):
+    def _add_int(self, key, label, props, lo=0, hi=99999):
+        w = QSpinBox()
+        w.setRange(lo, hi)
+        w.setValue(int(props.get(key, lo)))
+        w.valueChanged.connect(lambda v, k=key: self._set(k, v))
+        self._layout.addRow(BodyLabel(label), w)
+
+    def _set(self, key, val):
         if self._node:
-            self._node.properties[key] = value
-
-    def _clear_props(self):
-        while self._props_layout.count():
-            item = self._props_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
-    @staticmethod
-    def _script_list() -> list:
-        if not SCRIPTS_DIR.is_dir():
-            return []
-        return [p.name for p in SCRIPTS_DIR.iterdir() if p.suffix.lower() == ".json"]
+            self._node.properties[key] = val
 
 
 # ================================================================
-#  页面主 Widget
+#  变量监视面板
+# ================================================================
+class _VariableWatch(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.setSpacing(4)
+        title = BodyLabel("变量监视")
+        title.setAlignment(Qt.AlignCenter)
+        lay.addWidget(title)
+        self._text = QTextEdit()
+        self._text.setReadOnly(True)
+        self._text.setMaximumHeight(140)
+        lay.addWidget(self._text)
+
+    def update_variables(self, variables: dict):
+        lines = [f"{k} = {v}" for k, v in variables.items()]
+        self._text.setPlainText("\n".join(lines) if lines else "(无变量)")
+
+
+# ================================================================
+#  调试线程
+# ================================================================
+class _DebugThread(QThread):
+    node_highlight = pyqtSignal(str)
+    variables_updated = pyqtSignal(dict)
+    debug_finished = pyqtSignal()
+    debug_error = pyqtSignal(str)
+
+    def __init__(self, chart: FlowChart, parent=None):
+        super().__init__(parent)
+        self._chart = chart
+        self._stop_flag = False
+
+    def request_stop(self):
+        self._stop_flag = True
+
+    def run(self):
+        try:
+            engine = OCREngine.create_with_window(
+                cfg.get(cfg.hwndWindowsTitle),
+                cfg.get(cfg.hwndClassname),
+                2,
+                False,
+            )
+            executor = FlowExecutor(
+                self._chart,
+                engine,
+                node_callback=self._on_node,
+                step_delay=0.35,
+            )
+            executor.execute()
+            self.variables_updated.emit(dict(executor.variables))
+        except Exception as e:
+            self.debug_error.emit(str(e))
+        finally:
+            self.debug_finished.emit()
+
+    def _on_node(self, node_id: str):
+        if self._stop_flag:
+            raise InterruptedError("调试已手动停止")
+        self.node_highlight.emit(node_id)
+
+
+# ================================================================
+#  主页面
 # ================================================================
 class ScriptFlowWidget(QWidget):
-    """脚本流程图编辑器 - 作为主窗口的一个子页面"""
-
     def __init__(self, objectName: str, parent=None):
         super().__init__(parent)
         self.setObjectName(objectName)
+        self._scene = FlowScene()
+        self._canvas = FlowCanvas(self._scene, self)
+        self._minimap = FlowMinimap(self._scene, self._canvas, self._canvas)
+        self._props = _PropertiesPanel()
+        self._varwatch = _VariableWatch()
+        self._debug_thread: _DebugThread | None = None
         self._setup_ui()
-        self._connect_signals()
+        self._setup_connections()
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -200,103 +282,186 @@ class ScriptFlowWidget(QWidget):
         root.setSpacing(0)
 
         # ---- 工具栏 ----
-        toolbar = QWidget()
-        toolbar.setFixedHeight(52)
-        tb_layout = QHBoxLayout(toolbar)
-        tb_layout.setContentsMargins(10, 6, 10, 6)
-        tb_layout.setSpacing(6)
+        tb = QWidget()
+        tb.setFixedHeight(46)
+        tblay = QHBoxLayout(tb)
+        tblay.setContentsMargins(8, 4, 8, 4)
+        tblay.setSpacing(4)
 
         for nt, icon in _TOOLBAR_NODES:
-            btn = ToolButton(icon)
-            btn.setToolTip(f"添加 {NODE_TYPE_LABELS[nt]}")
-            btn.setFixedSize(36, 36)
-            btn.clicked.connect(lambda checked, _nt=nt: self._add_node(_nt))
-            tb_layout.addWidget(btn)
+            b = ToolButton(icon)
+            b.setFixedSize(QSize(34, 34))
+            b.setToolTip(NODE_TYPE_LABELS[nt])
+            b.clicked.connect(lambda chk, _n=nt: self._scene.add_node(_n))
+            tblay.addWidget(b)
 
-        tb_layout.addStretch()
+        tblay.addStretch()
 
-        self._save_btn = PrimaryPushButton(FluentIcon.SAVE, "保存")
-        self._save_btn.setFixedWidth(80)
-        tb_layout.addWidget(self._save_btn)
+        for icon, tip, fn in [
+            (FluentIcon.LAYOUT, "自动布局", self._auto_layout),
+            (FluentIcon.PHOTO, "导出图片", self._export_image),
+        ]:
+            b = ToolButton(icon)
+            b.setFixedSize(QSize(34, 34))
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            tblay.addWidget(b)
 
-        self._load_btn = PushButton(FluentIcon.FOLDER, "加载")
-        self._load_btn.setFixedWidth(80)
-        tb_layout.addWidget(self._load_btn)
+        for icon, tip, fn in [
+            (FluentIcon.LEFT_ARROW, "撤销 Ctrl+Z", self._scene.undo),
+            (FluentIcon.RIGHT_ARROW, "重做 Ctrl+Y", self._scene.redo),
+        ]:
+            b = ToolButton(icon)
+            b.setFixedSize(QSize(34, 34))
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            tblay.addWidget(b)
 
-        self._clear_btn = PushButton(FluentIcon.DELETE, "清空")
-        self._clear_btn.setFixedWidth(80)
-        tb_layout.addWidget(self._clear_btn)
+        self._debug_btn = PrimaryPushButton("调试运行")
+        self._debug_btn.setFixedSize(QSize(80, 30))
+        self._debug_btn.setToolTip("使用当前流程图执行一次并高亮节点路径")
+        tblay.addWidget(self._debug_btn)
 
-        root.addWidget(toolbar)
+        self._stop_debug_btn = ToolButton(FluentIcon.CLOSE)
+        self._stop_debug_btn.setFixedSize(QSize(34, 34))
+        self._stop_debug_btn.setToolTip("停止调试")
+        self._stop_debug_btn.setVisible(False)
+        tblay.addWidget(self._stop_debug_btn)
 
-        # ---- 画布 + 属性面板 ----
+        tblay.addStretch()
+
+        for icon, tip, fn in [
+            (FluentIcon.SAVE, "保存", self._save),
+            (FluentIcon.FOLDER, "加载", self._load),
+            (FluentIcon.DELETE, "清空", self._clear),
+        ]:
+            b = ToolButton(icon)
+            b.setFixedSize(QSize(34, 34))
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            tblay.addWidget(b)
+
+        root.addWidget(tb)
+
+        # ---- 主体 ----
         splitter = QSplitter(Qt.Horizontal)
-
-        self._scene = FlowScene()
-        self._canvas = FlowCanvas(self._scene)
         splitter.addWidget(self._canvas)
 
-        self._props = _PropertiesPanel()
-        splitter.addWidget(self._props)
-
+        right = QWidget()
+        right.setMinimumWidth(240)
+        right.setMaximumWidth(340)
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(0)
+        rl.addWidget(self._props, 1)
+        rl.addWidget(self._varwatch, 0)
+        splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 0)
-        root.addWidget(splitter)
+        root.addWidget(splitter, 1)
 
-    def _connect_signals(self):
-        self._scene.node_selected.connect(self._on_node_selected)
-        self._save_btn.clicked.connect(self._save)
-        self._load_btn.clicked.connect(self._load)
-        self._clear_btn.clicked.connect(self._clear)
+    def _setup_connections(self):
+        self._scene.node_selected.connect(self._on_select)
+        self._scene.flow_changed.connect(self._refresh_minimap)
+        self._debug_btn.clicked.connect(self._start_debug)
+        self._stop_debug_btn.clicked.connect(self._stop_debug)
+
+    def _on_select(self, node):
+        if node:
+            self._props.show_node(node)
+        else:
+            self._props.hide_node()
+
+    def _refresh_minimap(self):
+        self._minimap.refresh()
+        self._minimap.reposition()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._minimap.reposition()
 
     # ---------- 操作 ----------
-    def _add_node(self, node_type: NodeType):
-        center = self._canvas.mapToScene(self._canvas.viewport().rect().center())
-        self._scene.add_node(node_type, center.x(), center.y())
-
-    def _on_node_selected(self, node):
-        self._props.set_node(node)
-        if node:
-            node_item = self._scene.node_items.get(node.id)
-            if node_item:
-                node_item.update()
-
     def _save(self):
-        FLOWS_DIR.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(
             self, "保存流程图", str(FLOWS_DIR), "JSON (*.json)"
         )
         if path:
             self._scene.flow_chart.save(path)
             InfoBar.success(
-                "成功", "流程图已保存", parent=self, position=InfoBarPosition.TOP
+                "成功", f"已保存: {Path(path).name}", parent=self, duration=2000
             )
-            log.info(f"流程图已保存: {path}")
 
     def _load(self):
-        FLOWS_DIR.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getOpenFileName(
             self, "加载流程图", str(FLOWS_DIR), "JSON (*.json)"
         )
         if path:
-            try:
-                chart = FlowChart.load(path)
-                self._scene.load_flow_chart(chart)
-                self._props.set_node(None)
-                InfoBar.success(
-                    "成功", "流程图已加载", parent=self, position=InfoBarPosition.TOP
-                )
-                log.info(f"流程图已加载: {path}")
-            except Exception as e:
-                log.error(f"加载流程图失败: {e}")
-                InfoBar.error(
-                    "错误", f"加载失败: {e}", parent=self, position=InfoBarPosition.TOP
-                )
+            chart = FlowChart.load(path)
+            self._scene.load_flow_chart(chart)
+            InfoBar.success(
+                "成功", f"已加载: {Path(path).name}", parent=self, duration=2000
+            )
 
     def _clear(self):
         self._scene.load_flow_chart(FlowChart())
-        self._props.set_node(None)
 
-    @property
-    def flow_chart(self) -> FlowChart:
-        return self._scene.flow_chart
+    def _auto_layout(self):
+        self._scene.auto_layout()
+
+    def _export_image(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出图片", "", "PNG (*.png);;JPEG (*.jpg)"
+        )
+        if path:
+            self._scene.export_image(path)
+            InfoBar.success(
+                "成功", f"已导出: {Path(path).name}", parent=self, duration=2000
+            )
+
+    def update_variable_watch(self, variables: dict):
+        self._varwatch.update_variables(variables)
+
+    # ---------- 调试 ----------
+    def _start_debug(self):
+        chart = self._scene.flow_chart
+        if not chart.get_start_node():
+            InfoBar.warning(
+                "提示", "流程图中没有 开始 节点", parent=self, duration=2000
+            )
+            return
+        self._debug_btn.setEnabled(False)
+        self._stop_debug_btn.setVisible(True)
+        InfoBar.info("调试", "正在初始化 OCR 引擎并执行…", parent=self, duration=2000)
+
+        t = _DebugThread(chart, self)
+        t.node_highlight.connect(self._on_debug_node, Qt.QueuedConnection)
+        t.variables_updated.connect(self._on_debug_vars, Qt.QueuedConnection)
+        t.debug_finished.connect(self._on_debug_done, Qt.QueuedConnection)
+        t.debug_error.connect(self._on_debug_error, Qt.QueuedConnection)
+        self._debug_thread = t
+        t.start()
+
+    def _stop_debug(self):
+        if self._debug_thread and self._debug_thread.isRunning():
+            self._debug_thread.request_stop()
+
+    @pyqtSlot(str)
+    def _on_debug_node(self, node_id: str):
+        self._scene.highlight_node(node_id)
+
+    @pyqtSlot(dict)
+    def _on_debug_vars(self, variables: dict):
+        self._varwatch.update_variables(variables)
+
+    @pyqtSlot()
+    def _on_debug_done(self):
+        self._scene.clear_highlight()
+        self._debug_btn.setEnabled(True)
+        self._stop_debug_btn.setVisible(False)
+        self._debug_thread = None
+        InfoBar.success("调试", "执行完毕", parent=self, duration=2000)
+
+    @pyqtSlot(str)
+    def _on_debug_error(self, msg: str):
+        if "手动停止" not in msg:
+            InfoBar.error("调试出错", msg, parent=self, duration=4000)

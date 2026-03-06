@@ -32,16 +32,17 @@ from qfluentwidgets import (
     InfoBar,
 )
 
-from src.vstain.common.settings import RESOURCE_DIR, MODULES_DIR, SCRIPTS_DIR
+from src.vstain.common.settings import RESOURCE_DIR, MODULES_DIR, FLOWS_DIR
 from src.vstain.utils.platform import is_win11
 from src.vstain.widgets.image_card_widget import ImageCardWidget
 from src.vstain.widgets.hwnd_list_widget import HwndListWidget
 from src.vstain.common.style_sheet import StyleSheet
 from src.vstain.common.config import cfg
 from src.vstain.utils.logger import get_logger
-from gas.ocr_engine import OCREngine, TextAction
+from gas.ocr_engine import OCREngine
 
-from gas.recorder.operation_player import OperationPlayer
+from src.vstain.models.flow_model import FlowChart
+from src.vstain.engine.flow_executor import FlowExecutor
 
 log = get_logger()
 
@@ -57,6 +58,7 @@ class HomeWidget(SingleDirectionScrollArea):
         self._set_connections()
 
         self._pause_scripts = True
+        self._flow_executor = None
         self._child_windows = []  # 防止弹出窗口被 GC 回收
         self.test_scripts_thread = threading.Thread(target=self.test_script, daemon=True)
         self.test_scripts_thread.start()
@@ -163,20 +165,19 @@ class HomeWidget(SingleDirectionScrollArea):
         self.run_group_card.setTitle("执行脚本")
         self.run_group_card.setBorderRadius(8)
 
-        self.script_name = ComboBox()
-        self._update_script()
-
-        self.script_name.setFixedWidth(300)
+        self.flow_name = ComboBox()
+        self._update_flows()
+        self.flow_name.setFixedWidth(300)
         self.run_group_card.addGroup(
-            icon=FluentIcon.DICTIONARY,
-            title="脚本选择",
-            content="执行测试脚本选择",
-            widget=self.script_name,
+            icon=FluentIcon.COMMAND_PROMPT,
+            title="流程图选择",
+            content="选择要执行的流程图文件",
+            widget=self.flow_name,
         )
 
         self.run_btn = PrimaryPushButton("开始")
         self.run_btn.setEnabled(False)
-        self.run_group_card.addGroup(icon=FluentIcon.ERASE_TOOL, title="脚本1", content="测试开发", widget=self.run_btn)
+        self.run_group_card.addGroup(icon=FluentIcon.PLAY, title="运行", content="循环运行选中的流程图", widget=self.run_btn)
 
         self.detail_label = BodyLabel("开发者: jian 邮箱: 不说了")
 
@@ -203,7 +204,6 @@ class HomeWidget(SingleDirectionScrollArea):
         self.onnx_provider_combox.currentTextChanged.connect(
             lambda: cfg.set(cfg.onnxProvider, self.onnx_provider_combox.text())
         )
-        self.script_name.currentTextChanged.connect(lambda: cfg.set(cfg.scriptName, self.script_name.text()))
         self.run_btn.clicked.connect(self.run_script)
 
     def udpate_cfg(self):
@@ -216,24 +216,6 @@ class HomeWidget(SingleDirectionScrollArea):
         widget.destroyed.connect(lambda: self._child_windows.remove(widget) if widget in self._child_windows else None)
         widget.show()
         widget.cfgUpdated.connect(self.udpate_cfg)
-
-    def _update_script(self):
-        script_name_list = (
-            [str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]]
-            if Path(SCRIPTS_DIR).is_dir() else []
-        )
-        self.script_name.clear()
-        self.script_name.addItems(script_name_list)
-        if len(script_name_list) == 1:
-            cfg.set(cfg.scriptName, script_name_list[0])
-
-        self.script_name.setCurrentText(cfg.get(cfg.scriptName))
-
-    # def event(self, a0: QEvent) -> bool:
-    #     # 监听窗口显示事件
-    #     if a0.type() == QEvent.Show:
-    #         self._update_script()
-    #     return super().event(a0)
 
     def _capture(self):
         hwnd_list = get_hwnd_by_class_and_title(
@@ -257,12 +239,26 @@ class HomeWidget(SingleDirectionScrollArea):
         widget.destroyed.connect(lambda: self._child_windows.remove(widget) if widget in self._child_windows else None)
         widget.show()
 
+    def _update_flows(self):
+        FLOWS_DIR.mkdir(parents=True, exist_ok=True)
+        flow_list = [p.name for p in Path(FLOWS_DIR).iterdir() if p.suffix.lower() == ".json"]
+        self.flow_name.clear()
+        self.flow_name.addItems(flow_list)
+
     def run_script(self):
         if self._pause_scripts:
+            flow = self.flow_name.currentText()
+            if not flow:
+                InfoBar.warning(title="提示", content="请先选择一个流程图", parent=self, duration=3000)
+                return
+            fp = FLOWS_DIR / flow
+            if not fp.exists():
+                InfoBar.warning(title="提示", content=f"流程图文件不存在: {flow}", parent=self, duration=3000)
+                return
+            chart = FlowChart.load(str(fp))
+            self._flow_executor = FlowExecutor(chart, self.engine)
+            log.info(f"流程图已加载: {flow}")
             self.run_btn.setText("暂停")
-            log.debug(f"operation player init. scirpt nmae:{cfg.get(cfg.scriptName)}")
-            self.player = OperationPlayer(self.engine.device)
-            self.player.load_from_file(str(SCRIPTS_DIR / cfg.get(cfg.scriptName)))
             self._pause_scripts = False
         else:
             self.run_btn.setText("开始")
@@ -276,34 +272,14 @@ class HomeWidget(SingleDirectionScrollArea):
         log.debug("ocr engine init")
         self.engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
         log.debug("ocr engine init done")
-        self.flag = False
         QMetaObject.invokeMethod(self, "_set_run_btn_enabled", Qt.QueuedConnection, Q_ARG(bool, True))
 
         while True:
             if self._pause_scripts:
                 time.sleep(2)
                 continue
-            self.run()
+            try:
+                self._flow_executor.execute()
+            except Exception as e:
+                log.error(f"流程图执行出错: {e}")
             time.sleep(2)
-
-    def qili(self, x, y, t, o: OCREngine):
-        if not self.flag:
-            return
-        self.flag = False
-        log.debug(f"开始执行脚本: {cfg.get(cfg.scriptName)}")
-        self.player.replay()
-
-    def kaishi(self, x, y, t, o: OCREngine):
-        o.click(x, y)
-        self.flag = True
-
-    def run(self):
-        action = [
-            TextAction("再次进行", lambda x, y, t, o: o.click(x, y)),
-            TextAction("开始挑战", self.kaishi),
-            TextAction("驱离所有敌人", self.qili),
-            TextAction("避险", self.qili),
-            TextAction("扼守", self.qili),
-            TextAction("驱逐", self.qili),
-        ]
-        self.engine.process_texts(action)

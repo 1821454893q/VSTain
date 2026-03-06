@@ -16,8 +16,12 @@ class NodeType(Enum):
     CLICK = "click"
     SET_VARIABLE = "set_variable"
     SCRIPT_REPLAY = "script_replay"
+    KEY_INPUT = "key_input"
+    SWIPE = "swipe"
     WAIT = "wait"
     LOG = "log"
+    COMMENT = "comment"
+    SUBFLOW = "subflow"
 
 
 NODE_TYPE_LABELS = {
@@ -29,8 +33,12 @@ NODE_TYPE_LABELS = {
     NodeType.CLICK: "点击",
     NodeType.SET_VARIABLE: "设置变量",
     NodeType.SCRIPT_REPLAY: "脚本回放",
+    NodeType.KEY_INPUT: "键盘输入",
+    NodeType.SWIPE: "滑动",
     NodeType.WAIT: "等待",
     NodeType.LOG: "日志",
+    NodeType.COMMENT: "注释",
+    NodeType.SUBFLOW: "子流程",
 }
 
 NODE_TYPE_COLORS = {
@@ -42,8 +50,12 @@ NODE_TYPE_COLORS = {
     NodeType.CLICK: "#F44336",
     NodeType.SET_VARIABLE: "#009688",
     NodeType.SCRIPT_REPLAY: "#3F51B5",
+    NodeType.KEY_INPUT: "#E91E63",
+    NodeType.SWIPE: "#00BCD4",
     NodeType.WAIT: "#607D8B",
     NodeType.LOG: "#FF5722",
+    NodeType.COMMENT: "#9E9E9E",
+    NodeType.SUBFLOW: "#673AB7",
 }
 
 
@@ -89,11 +101,24 @@ NODE_TYPE_PORTS: Dict[NodeType, List[PortDef]] = {
         PortDef("in", "输入", True),
         PortDef("out", "输出", False),
     ],
+    NodeType.KEY_INPUT: [
+        PortDef("in", "输入", True),
+        PortDef("out", "输出", False),
+    ],
+    NodeType.SWIPE: [
+        PortDef("in", "输入", True),
+        PortDef("out", "输出", False),
+    ],
     NodeType.WAIT: [
         PortDef("in", "输入", True),
         PortDef("out", "输出", False),
     ],
     NodeType.LOG: [
+        PortDef("in", "输入", True),
+        PortDef("out", "输出", False),
+    ],
+    NodeType.COMMENT: [],
+    NodeType.SUBFLOW: [
         PortDef("in", "输入", True),
         PortDef("out", "输出", False),
     ],
@@ -129,8 +154,12 @@ class FlowNode:
             NodeType.CLICK: {},
             NodeType.SET_VARIABLE: {"variable": "", "value": ""},
             NodeType.SCRIPT_REPLAY: {"script_name": ""},
+            NodeType.KEY_INPUT: {"key": "", "action": "tap"},
+            NodeType.SWIPE: {"x1": 0, "y1": 0, "x2": 0, "y2": 0, "duration": 0.5},
             NodeType.WAIT: {"seconds": 1.0},
             NodeType.LOG: {"message": ""},
+            NodeType.COMMENT: {"text": ""},
+            NodeType.SUBFLOW: {"flow_file": ""},
         }
         return dict(defaults.get(node_type, {}))
 

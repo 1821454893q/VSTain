@@ -26,6 +26,9 @@ MODULES_DIR = RESOURCE_DIR / "modules"
 # 脚本 文件目录
 SCRIPTS_DIR = RESOURCE_DIR / "scripts"
 
+# 流程图 文件目录
+FLOWS_DIR = RESOURCE_DIR / "flows"
+
 # 窗口配置
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600

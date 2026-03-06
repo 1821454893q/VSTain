@@ -1,46 +1,33 @@
-"""流程图可视化编辑器 - 基于 QGraphicsScene 的节点式编辑器"""
+"""流程图可视化编辑器 - 节点式编辑器
 
-from typing import Dict, Optional
+功能: 箭头连接线 / 网格吸附 / 框选 / 撤销重做 / 复制粘贴 /
+      调试高亮 / 小地图 / 导出图片 / 自动布局 / 右键菜单
+"""
+
+import json
+import math
+from collections import deque
+from typing import Dict, List, Optional
 
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
 from PyQt5.QtGui import (
-    QPainter,
-    QPen,
-    QBrush,
-    QColor,
-    QPainterPath,
-    QFont,
-    QTransform,
-    QWheelEvent,
-    QMouseEvent,
+    QPainter, QPen, QBrush, QColor, QPainterPath, QFont,
+    QTransform, QWheelEvent, QMouseEvent, QImage, QPolygonF,
 )
 from PyQt5.QtWidgets import (
-    QGraphicsScene,
-    QGraphicsView,
-    QGraphicsObject,
-    QGraphicsEllipseItem,
-    QGraphicsPathItem,
-    QGraphicsItem,
-    QGraphicsDropShadowEffect,
-    QGraphicsSceneMouseEvent,
-    QStyleOptionGraphicsItem,
-    QWidget,
-    QMenu,
-    QAction,
+    QGraphicsScene, QGraphicsView, QGraphicsObject,
+    QGraphicsEllipseItem, QGraphicsPathItem, QGraphicsItem,
+    QGraphicsDropShadowEffect, QGraphicsSceneMouseEvent,
+    QStyleOptionGraphicsItem, QWidget, QMenu,
 )
 from qfluentwidgets import isDarkTheme
 
 from src.vstain.models.flow_model import (
-    FlowNode,
-    FlowConnection,
-    FlowChart,
-    NodeType,
-    NODE_TYPE_LABELS,
-    NODE_TYPE_COLORS,
-    PortDef,
+    FlowNode, FlowConnection, FlowChart, NodeType,
+    NODE_TYPE_LABELS, NODE_TYPE_COLORS, PortDef,
 )
 
-# ---------- 尺寸常量 ----------
+# ---------- 常量 ----------
 NODE_WIDTH = 180
 NODE_HEADER_H = 30
 NODE_PORT_SPACING = 28
@@ -49,34 +36,68 @@ NODE_BORDER_RADIUS = 8
 NODE_BOTTOM_PAD = 8
 GRID_SIZE = 20
 GRID_SIZE_MAJOR = 100
-
-
-def _theme_colors():
-    """根据当前主题返回一组配色"""
-    dark = isDarkTheme()
-    return {
-        "grid": QColor(50, 50, 55) if dark else QColor(225, 225, 225),
-        "grid_major": QColor(60, 60, 65) if dark else QColor(200, 200, 200),
-        "bg": QColor(30, 30, 30) if dark else QColor(245, 245, 245),
-        "node_bg": QColor(45, 45, 48) if dark else QColor(255, 255, 255),
-        "node_border": QColor(70, 70, 70) if dark else QColor(200, 200, 200),
-        "text": QColor(220, 220, 220) if dark else QColor(50, 50, 50),
-        "text_dim": QColor(150, 150, 150) if dark else QColor(120, 120, 120),
-        "port": QColor(170, 170, 170) if dark else QColor(140, 140, 140),
-        "conn": QColor(170, 170, 170) if dark else QColor(130, 130, 130),
-    }
-
+ARROW_SIZE = 8
+SNAP_SIZE = GRID_SIZE
 
 SELECTION_COLOR = QColor(33, 150, 243)
 PORT_HOVER_COLOR = QColor(33, 150, 243)
+DEBUG_COLOR = QColor(76, 175, 80)
+
+
+def _tc():
+    d = isDarkTheme()
+    return {
+        "grid": QColor(50, 50, 55) if d else QColor(225, 225, 225),
+        "grid_major": QColor(60, 60, 65) if d else QColor(200, 200, 200),
+        "bg": QColor(30, 30, 30) if d else QColor(245, 245, 245),
+        "node_bg": QColor(45, 45, 48) if d else QColor(255, 255, 255),
+        "node_border": QColor(70, 70, 70) if d else QColor(200, 200, 200),
+        "text": QColor(220, 220, 220) if d else QColor(50, 50, 50),
+        "text_dim": QColor(150, 150, 150) if d else QColor(120, 120, 120),
+        "port": QColor(170, 170, 170) if d else QColor(140, 140, 140),
+        "conn": QColor(170, 170, 170) if d else QColor(130, 130, 130),
+    }
 
 
 # ================================================================
-#  端口 (Port)
+#  撤销管理器
+# ================================================================
+class _UndoManager:
+    def __init__(self, limit=50):
+        self._history: List[str] = []
+        self._pos = -1
+        self._limit = limit
+
+    def push(self, state: str):
+        self._history = self._history[: self._pos + 1]
+        self._history.append(state)
+        if len(self._history) > self._limit:
+            self._history.pop(0)
+        self._pos = len(self._history) - 1
+
+    def can_undo(self):
+        return self._pos > 0
+
+    def can_redo(self):
+        return self._pos < len(self._history) - 1
+
+    def undo(self) -> Optional[str]:
+        if self.can_undo():
+            self._pos -= 1
+            return self._history[self._pos]
+        return None
+
+    def redo(self) -> Optional[str]:
+        if self.can_redo():
+            self._pos += 1
+            return self._history[self._pos]
+        return None
+
+
+# ================================================================
+#  端口
 # ================================================================
 class FlowPortItem(QGraphicsEllipseItem):
-    """节点上的端口圆圈，支持拖拽创建连接"""
-
     def __init__(self, port_def: PortDef, node_item: "FlowNodeItem"):
         r = NODE_PORT_RADIUS
         super().__init__(-r, -r, r * 2, r * 2)
@@ -84,47 +105,47 @@ class FlowPortItem(QGraphicsEllipseItem):
         self.node_item = node_item
         self.setAcceptHoverEvents(True)
         self.setPen(QPen(Qt.NoPen))
-        self.setBrush(QBrush(_theme_colors()["port"]))
+        self.setBrush(QBrush(_tc()["port"]))
         self.setCursor(Qt.CrossCursor)
         self.setZValue(2)
 
     @property
-    def is_input(self) -> bool:
+    def is_input(self):
         return self.port_def.is_input
 
     @property
-    def port_id(self) -> str:
+    def port_id(self):
         return self.port_def.id
 
     @property
-    def node_id(self) -> str:
+    def node_id(self):
         return self.node_item.flow_node.id
 
-    def center_scene_pos(self) -> QPointF:
+    def center_scene_pos(self):
         return self.scenePos()
 
-    def hoverEnterEvent(self, event):
+    def hoverEnterEvent(self, e):
         self.setBrush(QBrush(PORT_HOVER_COLOR))
-        super().hoverEnterEvent(event)
+        super().hoverEnterEvent(e)
 
-    def hoverLeaveEvent(self, event):
-        self.setBrush(QBrush(_theme_colors()["port"]))
-        super().hoverLeaveEvent(event)
+    def hoverLeaveEvent(self, e):
+        self.setBrush(QBrush(_tc()["port"]))
+        super().hoverLeaveEvent(e)
 
 
 # ================================================================
-#  节点 (Node)
+#  节点
 # ================================================================
 class FlowNodeItem(QGraphicsObject):
-    """流程图节点图形项"""
-
     position_changed = pyqtSignal()
     selected_changed = pyqtSignal(bool)
+    drag_finished = pyqtSignal()
 
     def __init__(self, flow_node: FlowNode, parent=None):
         super().__init__(parent)
         self.flow_node = flow_node
         self.port_items: Dict[str, FlowPortItem] = {}
+        self._debug_active = False
 
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
@@ -138,63 +159,64 @@ class FlowNodeItem(QGraphicsObject):
         shadow.setColor(QColor(0, 0, 0, 50))
         shadow.setOffset(3, 3)
         self.setGraphicsEffect(shadow)
-
         self._create_ports()
 
-    # ---------- 端口布局 ----------
+    def set_debug_active(self, active: bool):
+        self._debug_active = active
+        self.update()
+
     def _create_ports(self):
         ports = self.flow_node.get_ports()
         inputs = [p for p in ports if p.is_input]
         outputs = [p for p in ports if not p.is_input]
-
         for i, p in enumerate(inputs):
-            item = FlowPortItem(p, self)
-            item.setParentItem(self)
-            item.setPos(0, NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5))
-            self.port_items[p.id] = item
-
+            it = FlowPortItem(p, self)
+            it.setParentItem(self)
+            it.setPos(0, NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5))
+            self.port_items[p.id] = it
         for i, p in enumerate(outputs):
-            item = FlowPortItem(p, self)
-            item.setParentItem(self)
-            item.setPos(NODE_WIDTH, NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5))
-            self.port_items[p.id] = item
+            it = FlowPortItem(p, self)
+            it.setParentItem(self)
+            it.setPos(NODE_WIDTH, NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5))
+            self.port_items[p.id] = it
 
-    # ---------- 几何 ----------
     @property
     def node_height(self) -> float:
         ports = self.flow_node.get_ports()
-        n_in = sum(1 for p in ports if p.is_input)
-        n_out = sum(1 for p in ports if not p.is_input)
-        rows = max(n_in, n_out, 1)
+        ni = sum(1 for p in ports if p.is_input)
+        no = sum(1 for p in ports if not p.is_input)
+        rows = max(ni, no, 1)
         h = NODE_HEADER_H + NODE_PORT_SPACING * rows
         if self._summary_text():
             h += 22
         return h + NODE_BOTTOM_PAD
 
-    def boundingRect(self) -> QRectF:
+    def boundingRect(self):
         m = 4
         return QRectF(-m, -m, NODE_WIDTH + 2 * m, self.node_height + 2 * m)
 
-    # ---------- 绘制 ----------
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget = None):
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-        tc = _theme_colors()
+        tc = _tc()
         h = self.node_height
         rect = QRectF(0, 0, NODE_WIDTH, h)
 
-        # 主体
-        border_color = SELECTION_COLOR if self.isSelected() else tc["node_border"]
-        border_w = 2.0 if self.isSelected() else 1.0
-        body_path = QPainterPath()
-        body_path.addRoundedRect(rect, NODE_BORDER_RADIUS, NODE_BORDER_RADIUS)
-        painter.setPen(QPen(border_color, border_w))
-        painter.setBrush(QBrush(tc["node_bg"]))
-        painter.drawPath(body_path)
+        if self._debug_active:
+            bc, bw = DEBUG_COLOR, 3.0
+        elif self.isSelected():
+            bc, bw = SELECTION_COLOR, 2.0
+        else:
+            bc, bw = tc["node_border"], 1.0
 
-        # 表头
+        body = QPainterPath()
+        body.addRoundedRect(rect, NODE_BORDER_RADIUS, NODE_BORDER_RADIUS)
+        painter.setPen(QPen(bc, bw))
+        painter.setBrush(QBrush(tc["node_bg"]))
+        painter.drawPath(body)
+
         hdr_color = QColor(NODE_TYPE_COLORS[self.flow_node.node_type])
-        hdr = QPainterPath()
         r = NODE_BORDER_RADIUS
+        hdr = QPainterPath()
         hdr.moveTo(r, 0)
         hdr.lineTo(NODE_WIDTH - r, 0)
         hdr.arcTo(NODE_WIDTH - 2 * r, 0, 2 * r, 2 * r, 90, -90)
@@ -207,40 +229,34 @@ class FlowNodeItem(QGraphicsObject):
         painter.setBrush(QBrush(hdr_color))
         painter.drawPath(hdr)
 
-        # 标题
         painter.setPen(QPen(QColor(255, 255, 255)))
         painter.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
         painter.drawText(QRectF(0, 0, NODE_WIDTH, NODE_HEADER_H), Qt.AlignCenter,
                          NODE_TYPE_LABELS[self.flow_node.node_type])
 
-        # 端口标签
         painter.setFont(QFont("Microsoft YaHei", 8))
         ports = self.flow_node.get_ports()
-        inputs = [p for p in ports if p.is_input]
-        outputs = [p for p in ports if not p.is_input]
-
+        ins = [p for p in ports if p.is_input]
+        outs = [p for p in ports if not p.is_input]
         painter.setPen(QPen(tc["text"]))
-        for i, p in enumerate(inputs):
+        for i, p in enumerate(ins):
             y = NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5)
-            r2 = QRectF(NODE_PORT_RADIUS + 5, y - 10, NODE_WIDTH / 2 - NODE_PORT_RADIUS, 20)
-            painter.drawText(r2, Qt.AlignLeft | Qt.AlignVCenter, p.label)
-
-        for i, p in enumerate(outputs):
+            painter.drawText(QRectF(NODE_PORT_RADIUS + 5, y - 10, NODE_WIDTH / 2 - NODE_PORT_RADIUS, 20),
+                             Qt.AlignLeft | Qt.AlignVCenter, p.label)
+        for i, p in enumerate(outs):
             y = NODE_HEADER_H + NODE_PORT_SPACING * (i + 0.5)
-            r2 = QRectF(NODE_WIDTH / 2, y - 10, NODE_WIDTH / 2 - NODE_PORT_RADIUS - 5, 20)
-            painter.drawText(r2, Qt.AlignRight | Qt.AlignVCenter, p.label)
+            painter.drawText(QRectF(NODE_WIDTH / 2, y - 10, NODE_WIDTH / 2 - NODE_PORT_RADIUS - 5, 20),
+                             Qt.AlignRight | Qt.AlignVCenter, p.label)
 
-        # 属性摘要
         summary = self._summary_text()
         if summary:
             painter.setPen(QPen(tc["text_dim"]))
             painter.setFont(QFont("Microsoft YaHei", 7))
-            n_in = sum(1 for p in ports if p.is_input)
-            n_out = sum(1 for p in ports if not p.is_input)
-            rows = max(n_in, n_out, 1)
+            ni2 = sum(1 for p in ports if p.is_input)
+            no2 = sum(1 for p in ports if not p.is_input)
+            rows = max(ni2, no2, 1)
             sy = NODE_HEADER_H + NODE_PORT_SPACING * rows + 2
-            sr = QRectF(8, sy, NODE_WIDTH - 16, 18)
-            painter.drawText(sr, Qt.AlignLeft | Qt.AlignVCenter, summary)
+            painter.drawText(QRectF(8, sy, NODE_WIDTH - 16, 18), Qt.AlignLeft | Qt.AlignVCenter, summary)
 
     def _summary_text(self) -> str:
         p = self.flow_node.properties
@@ -253,23 +269,36 @@ class FlowNodeItem(QGraphicsObject):
         if nt == NodeType.LOOP:
             mx = p.get("max_iterations", -1)
             cv = p.get("counter_variable", "")
-            label = f"×{mx}" if mx >= 0 else "∞"
-            return f"{label}  {cv}" if cv else label
+            lb = f"×{mx}" if mx >= 0 else "∞"
+            return f"{lb}  {cv}" if cv else lb
         if nt == NodeType.SET_VARIABLE:
             v, val = p.get("variable", ""), p.get("value", "")
             return f"{v} = {val}" if v else ""
         if nt == NodeType.SCRIPT_REPLAY:
             return p.get("script_name", "") or ""
+        if nt == NodeType.KEY_INPUT:
+            return f"{p.get('key', '')} ({p.get('action', 'tap')})"
+        if nt == NodeType.SWIPE:
+            return f"({p.get('x1',0)},{p.get('y1',0)})→({p.get('x2',0)},{p.get('y2',0)})"
         if nt == NodeType.WAIT:
             return f"{p.get('seconds', 1.0)}s"
         if nt == NodeType.OCR_SCAN:
             return f"conf: {p.get('confidence', 0.5)}"
         if nt == NodeType.LOG:
             return p.get("message", "") or ""
+        if nt == NodeType.COMMENT:
+            return p.get("text", "") or ""
+        if nt == NodeType.SUBFLOW:
+            return p.get("flow_file", "") or ""
         return ""
 
     # ---------- 事件 ----------
     def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange:
+            return QPointF(
+                round(value.x() / SNAP_SIZE) * SNAP_SIZE,
+                round(value.y() / SNAP_SIZE) * SNAP_SIZE,
+            )
         if change == QGraphicsItem.ItemPositionHasChanged:
             self.flow_node.x = self.pos().x()
             self.flow_node.y = self.pos().y()
@@ -281,63 +310,72 @@ class FlowNodeItem(QGraphicsObject):
     def get_port_item(self, port_id: str) -> Optional[FlowPortItem]:
         return self.port_items.get(port_id)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, e):
         self.setCursor(Qt.ClosedHandCursor)
-        super().mousePressEvent(event)
+        super().mousePressEvent(e)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, e):
         self.setCursor(Qt.OpenHandCursor)
-        super().mouseReleaseEvent(event)
+        self.drag_finished.emit()
+        super().mouseReleaseEvent(e)
 
 
 # ================================================================
-#  连接线 (Connection)
+#  连接线 (带箭头)
 # ================================================================
-def _bezier_path(start: QPointF, end: QPointF) -> QPainterPath:
+def _bezier(start: QPointF, end: QPointF) -> QPainterPath:
     dx = max(abs(end.x() - start.x()) * 0.5, 50)
-    path = QPainterPath()
-    path.moveTo(start)
-    path.cubicTo(start.x() + dx, start.y(), end.x() - dx, end.y(), end.x(), end.y())
-    return path
+    p = QPainterPath()
+    p.moveTo(start)
+    p.cubicTo(start.x() + dx, start.y(), end.x() - dx, end.y(), end.x(), end.y())
+    return p
 
 
 class FlowConnectionItem(QGraphicsPathItem):
-    """两个端口之间的贝塞尔曲线连接"""
-
-    def __init__(self, connection: FlowConnection, src_port: FlowPortItem, tgt_port: FlowPortItem):
+    def __init__(self, connection: FlowConnection, sp: FlowPortItem, tp: FlowPortItem):
         super().__init__()
         self.connection = connection
-        self.source_port = src_port
-        self.target_port = tgt_port
+        self.source_port = sp
+        self.target_port = tp
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setZValue(-1)
         self.update_path()
 
     def update_path(self):
-        start = self.source_port.center_scene_pos()
-        end = self.target_port.center_scene_pos()
-        self.setPath(_bezier_path(start, end))
+        self.setPath(_bezier(self.source_port.center_scene_pos(), self.target_port.center_scene_pos()))
 
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-        tc = _theme_colors()
+        tc = _tc()
         color = SELECTION_COLOR if self.isSelected() else tc["conn"]
-        width = 2.5 if self.isSelected() else 2.0
-        painter.setPen(QPen(color, width))
+        w = 2.5 if self.isSelected() else 2.0
+        painter.setPen(QPen(color, w))
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(self.path())
 
+        path = self.path()
+        if path.length() < 1:
+            return
+        t = min(0.97, 1.0)
+        p1 = path.pointAtPercent(t)
+        p2 = path.pointAtPercent(1.0)
+        angle = math.atan2(p2.y() - p1.y(), p2.x() - p1.x())
+        a1 = QPointF(p2.x() - ARROW_SIZE * math.cos(angle - math.pi / 6),
+                      p2.y() - ARROW_SIZE * math.sin(angle - math.pi / 6))
+        a2 = QPointF(p2.x() - ARROW_SIZE * math.cos(angle + math.pi / 6),
+                      p2.y() - ARROW_SIZE * math.sin(angle + math.pi / 6))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(color))
+        painter.drawPolygon(QPolygonF([p2, a1, a2]))
+
     def shape(self) -> QPainterPath:
-        """加宽点击区域，使连接线更容易选中"""
         from PyQt5.QtGui import QPainterPathStroker
-        stroker = QPainterPathStroker()
-        stroker.setWidth(12)
-        return stroker.createStroke(self.path())
+        s = QPainterPathStroker()
+        s.setWidth(12)
+        return s.createStroke(self.path())
 
 
 class _TempConnectionItem(QGraphicsPathItem):
-    """拖拽创建连接时的临时虚线"""
-
     def __init__(self, start_pos: QPointF):
         super().__init__()
         self.start_pos = start_pos
@@ -345,16 +383,14 @@ class _TempConnectionItem(QGraphicsPathItem):
         self.setZValue(-1)
 
     def update_end(self, end_pos: QPointF):
-        self.setPath(_bezier_path(self.start_pos, end_pos))
+        self.setPath(_bezier(self.start_pos, end_pos))
 
 
 # ================================================================
-#  场景 (Scene)
+#  场景
 # ================================================================
 class FlowScene(QGraphicsScene):
-    """管理所有节点和连接的场景"""
-
-    node_selected = pyqtSignal(object)  # FlowNode | None
+    node_selected = pyqtSignal(object)
     flow_changed = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -364,18 +400,88 @@ class FlowScene(QGraphicsScene):
         self.connection_items: Dict[str, FlowConnectionItem] = {}
         self._temp_conn: Optional[_TempConnectionItem] = None
         self._drag_port: Optional[FlowPortItem] = None
+        self._undo = _UndoManager()
+        self._clipboard: Optional[str] = None
         self.setSceneRect(-3000, -3000, 6000, 6000)
+        self._push_undo()
+
+    # ---------- 撤销 ----------
+    def _snapshot(self) -> str:
+        return json.dumps({
+            "nodes": [n.to_dict() for n in self.flow_chart.nodes],
+            "connections": [c.to_dict() for c in self.flow_chart.connections],
+            "variables": self.flow_chart.variables,
+        }, ensure_ascii=False)
+
+    def _push_undo(self):
+        self._undo.push(self._snapshot())
+
+    def _restore(self, state: str):
+        data = json.loads(state)
+        chart = FlowChart()
+        chart.nodes = [FlowNode.from_dict(n) for n in data.get("nodes", [])]
+        chart.connections = [FlowConnection.from_dict(c) for c in data.get("connections", [])]
+        chart.variables = data.get("variables", {})
+        self.load_flow_chart(chart, push_undo=False)
+
+    def undo(self):
+        s = self._undo.undo()
+        if s:
+            self._restore(s)
+
+    def redo(self):
+        s = self._undo.redo()
+        if s:
+            self._restore(s)
+
+    # ---------- 复制粘贴 ----------
+    def copy_selected(self):
+        sel = [it for it in self.selectedItems() if isinstance(it, FlowNodeItem)]
+        if not sel:
+            return
+        ids = {it.flow_node.id for it in sel}
+        nodes = [it.flow_node.to_dict() for it in sel]
+        conns = [c.to_dict() for c in self.flow_chart.connections
+                 if c.source_node_id in ids and c.target_node_id in ids]
+        self._clipboard = json.dumps({"nodes": nodes, "connections": conns}, ensure_ascii=False)
+
+    def paste(self, offset_x=40, offset_y=40):
+        if not self._clipboard:
+            return
+        data = json.loads(self._clipboard)
+        import uuid
+        id_map = {}
+        for nd in data["nodes"]:
+            old_id = nd["id"]
+            new_id = uuid.uuid4().hex[:8]
+            id_map[old_id] = new_id
+            nd["id"] = new_id
+            nd["x"] += offset_x
+            nd["y"] += offset_y
+        for cd in data["connections"]:
+            cd["id"] = uuid.uuid4().hex[:8]
+            cd["source_node"] = id_map.get(cd["source_node"], cd["source_node"])
+            cd["target_node"] = id_map.get(cd["target_node"], cd["target_node"])
+
+        for nd in data["nodes"]:
+            node = FlowNode.from_dict(nd)
+            self.flow_chart.add_node(node)
+            item = self._make_node_item(node)
+            item.setSelected(True)
+        for cd in data["connections"]:
+            conn = FlowConnection.from_dict(cd)
+            self.flow_chart.add_connection(conn)
+            self._make_conn_item(conn)
+        self._push_undo()
+        self.flow_changed.emit()
 
     # ---------- 背景网格 ----------
     def drawBackground(self, painter: QPainter, rect: QRectF):
         super().drawBackground(painter, rect)
-        tc = _theme_colors()
+        tc = _tc()
         painter.fillRect(rect, QBrush(tc["bg"]))
-
         left = int(rect.left()) - int(rect.left()) % GRID_SIZE
         top = int(rect.top()) - int(rect.top()) % GRID_SIZE
-
-        # 小网格
         painter.setPen(QPen(tc["grid"], 0.5))
         x = left
         while x <= rect.right():
@@ -385,8 +491,6 @@ class FlowScene(QGraphicsScene):
         while y <= rect.bottom():
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             y += GRID_SIZE
-
-        # 大网格
         left_m = int(rect.left()) - int(rect.left()) % GRID_SIZE_MAJOR
         top_m = int(rect.top()) - int(rect.top()) % GRID_SIZE_MAJOR
         painter.setPen(QPen(tc["grid_major"], 1))
@@ -399,15 +503,34 @@ class FlowScene(QGraphicsScene):
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             y += GRID_SIZE_MAJOR
 
-    # ---------- 节点操作 ----------
-    def add_node(self, node_type: NodeType, x: float = 0, y: float = 0) -> FlowNodeItem:
-        node = FlowNode.create(node_type, x, y)
-        self.flow_chart.add_node(node)
+    # ---------- 节点 CRUD ----------
+    def _make_node_item(self, node: FlowNode) -> FlowNodeItem:
         item = FlowNodeItem(node)
         item.position_changed.connect(self._on_node_moved)
         item.selected_changed.connect(lambda sel, n=node: self._on_node_selected(n, sel))
+        item.drag_finished.connect(self._push_undo)
         self.addItem(item)
         self.node_items[node.id] = item
+        return item
+
+    def _make_conn_item(self, conn: FlowConnection) -> Optional[FlowConnectionItem]:
+        sni = self.node_items.get(conn.source_node_id)
+        tni = self.node_items.get(conn.target_node_id)
+        if sni and tni:
+            sp = sni.get_port_item(conn.source_port_id)
+            tp = tni.get_port_item(conn.target_port_id)
+            if sp and tp:
+                ci = FlowConnectionItem(conn, sp, tp)
+                self.addItem(ci)
+                self.connection_items[conn.id] = ci
+                return ci
+        return None
+
+    def add_node(self, node_type: NodeType, x=0.0, y=0.0) -> FlowNodeItem:
+        node = FlowNode.create(node_type, x, y)
+        self.flow_chart.add_node(node)
+        item = self._make_node_item(node)
+        self._push_undo()
         self.flow_changed.emit()
         return item
 
@@ -415,16 +538,15 @@ class FlowScene(QGraphicsScene):
         item = self.node_items.get(node_id)
         if not item:
             return
-        for cid in [
-            c.id for c in self.flow_chart.connections
-            if c.source_node_id == node_id or c.target_node_id == node_id
-        ]:
+        for cid in [c.id for c in self.flow_chart.connections
+                     if c.source_node_id == node_id or c.target_node_id == node_id]:
             if cid in self.connection_items:
                 self.removeItem(self.connection_items.pop(cid))
         self.flow_chart.remove_node(node_id)
         self.removeItem(item)
         self.node_items.pop(node_id, None)
         self.node_selected.emit(None)
+        self._push_undo()
         self.flow_changed.emit()
 
     def remove_connection_by_id(self, conn_id: str):
@@ -434,54 +556,129 @@ class FlowScene(QGraphicsScene):
         self.flow_chart.remove_connection(conn_id)
         self.removeItem(item)
         self.connection_items.pop(conn_id, None)
+        self._push_undo()
         self.flow_changed.emit()
 
     def remove_selected(self):
         removed = False
         for item in list(self.selectedItems()):
             if isinstance(item, FlowNodeItem):
-                self.remove_node_by_id(item.flow_node.id)
+                nid = item.flow_node.id
+                for cid in [c.id for c in self.flow_chart.connections
+                             if c.source_node_id == nid or c.target_node_id == nid]:
+                    if cid in self.connection_items:
+                        self.removeItem(self.connection_items.pop(cid))
+                self.flow_chart.remove_node(nid)
+                self.removeItem(item)
+                self.node_items.pop(nid, None)
                 removed = True
             elif isinstance(item, FlowConnectionItem):
-                self.remove_connection_by_id(item.connection.id)
+                self.flow_chart.remove_connection(item.connection.id)
+                self.removeItem(item)
+                self.connection_items.pop(item.connection.id, None)
                 removed = True
         if removed:
             self.node_selected.emit(None)
+            self._push_undo()
+            self.flow_changed.emit()
 
-    # ---------- 连接操作 ----------
-    def _create_connection(self, src_port: FlowPortItem, tgt_port: FlowPortItem):
-        if src_port.is_input or not tgt_port.is_input:
+    # ---------- 连接 ----------
+    def _create_connection(self, sp: FlowPortItem, tp: FlowPortItem):
+        if sp.is_input or not tp.is_input:
             return
-        if src_port.node_id == tgt_port.node_id:
+        if sp.node_id == tp.node_id:
             return
-
         for ci in self.connection_items.values():
             c = ci.connection
-            if (c.source_node_id == src_port.node_id
-                    and c.source_port_id == src_port.port_id
-                    and c.target_node_id == tgt_port.node_id
-                    and c.target_port_id == tgt_port.port_id):
+            if (c.source_node_id == sp.node_id and c.source_port_id == sp.port_id
+                    and c.target_node_id == tp.node_id and c.target_port_id == tp.port_id):
                 return
-
-        conn = FlowConnection.create(src_port.node_id, src_port.port_id, tgt_port.node_id, tgt_port.port_id)
+        conn = FlowConnection.create(sp.node_id, sp.port_id, tp.node_id, tp.port_id)
         self.flow_chart.add_connection(conn)
-
-        item = FlowConnectionItem(conn, src_port, tgt_port)
+        item = FlowConnectionItem(conn, sp, tp)
         self.addItem(item)
         self.connection_items[conn.id] = item
+        self._push_undo()
         self.flow_changed.emit()
 
     def _on_node_moved(self):
         for ci in self.connection_items.values():
             ci.update_path()
 
-    def _on_node_selected(self, node: FlowNode, selected: bool):
-        if selected:
+    def _on_node_selected(self, node, sel):
+        if sel:
             self.node_selected.emit(node)
         elif not any(it.isSelected() for it in self.node_items.values()):
             self.node_selected.emit(None)
 
-    # ---------- 鼠标事件(端口拖拽) ----------
+    # ---------- 调试高亮 ----------
+    def highlight_node(self, node_id: str):
+        for nid, item in self.node_items.items():
+            item.set_debug_active(nid == node_id)
+
+    def clear_highlight(self):
+        for item in self.node_items.values():
+            item.set_debug_active(False)
+
+    # ---------- 自动布局 ----------
+    def auto_layout(self):
+        chart = self.flow_chart
+        if not chart.nodes:
+            return
+        adj: Dict[str, List[str]] = {n.id: [] for n in chart.nodes}
+        in_deg: Dict[str, int] = {n.id: 0 for n in chart.nodes}
+        for c in chart.connections:
+            if c.target_node_id in adj:
+                adj[c.source_node_id].append(c.target_node_id)
+                in_deg[c.target_node_id] = in_deg.get(c.target_node_id, 0) + 1
+
+        layers: Dict[str, int] = {}
+        q = deque([nid for nid, d in in_deg.items() if d == 0])
+        for nid in q:
+            layers.setdefault(nid, 0)
+        while q:
+            nid = q.popleft()
+            for child in adj.get(nid, []):
+                layers[child] = max(layers.get(child, 0), layers[nid] + 1)
+                in_deg[child] -= 1
+                if in_deg[child] <= 0 and child not in [x for x in q]:
+                    q.append(child)
+        ml = max(layers.values(), default=0) + 1
+        for n in chart.nodes:
+            if n.id not in layers:
+                layers[n.id] = ml
+                ml += 1
+        groups: Dict[int, List[str]] = {}
+        for nid, l in layers.items():
+            groups.setdefault(l, []).append(nid)
+        for l, nids in groups.items():
+            for i, nid in enumerate(nids):
+                node = chart.get_node(nid)
+                if node:
+                    node.x = l * 260
+                    node.y = i * 120
+        for nid, item in self.node_items.items():
+            node = chart.get_node(nid)
+            if node:
+                item.setPos(node.x, node.y)
+        for ci in self.connection_items.values():
+            ci.update_path()
+        self._push_undo()
+        self.flow_changed.emit()
+
+    # ---------- 导出图片 ----------
+    def export_image(self, filepath: str):
+        rect = self.itemsBoundingRect()
+        rect.adjust(-30, -30, 30, 30)
+        img = QImage(max(int(rect.width()), 1), max(int(rect.height()), 1), QImage.Format_ARGB32)
+        img.fill(QColor(30, 30, 30))
+        painter = QPainter(img)
+        painter.setRenderHint(QPainter.Antialiasing)
+        self.render(painter, QRectF(img.rect()), rect)
+        painter.end()
+        img.save(filepath)
+
+    # ---------- 鼠标事件 ----------
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent):
         item = self.itemAt(event.scenePos(), QTransform())
         if isinstance(item, FlowPortItem) and event.button() == Qt.LeftButton:
@@ -512,51 +709,35 @@ class FlowScene(QGraphicsScene):
         super().mouseReleaseEvent(event)
 
     # ---------- 加载 ----------
-    def load_flow_chart(self, chart: FlowChart):
+    def load_flow_chart(self, chart: FlowChart, push_undo=True):
         self.clear()
         self.node_items.clear()
         self.connection_items.clear()
         self.flow_chart = chart
-
         for node in chart.nodes:
-            item = FlowNodeItem(node)
-            item.position_changed.connect(self._on_node_moved)
-            item.selected_changed.connect(lambda sel, n=node: self._on_node_selected(n, sel))
-            self.addItem(item)
-            self.node_items[node.id] = item
-
+            self._make_node_item(node)
         for conn in chart.connections:
-            src_ni = self.node_items.get(conn.source_node_id)
-            tgt_ni = self.node_items.get(conn.target_node_id)
-            if src_ni and tgt_ni:
-                sp = src_ni.get_port_item(conn.source_port_id)
-                tp = tgt_ni.get_port_item(conn.target_port_id)
-                if sp and tp:
-                    ci = FlowConnectionItem(conn, sp, tp)
-                    self.addItem(ci)
-                    self.connection_items[conn.id] = ci
-
+            self._make_conn_item(conn)
+        if push_undo:
+            self._push_undo()
         self.flow_changed.emit()
 
 
 # ================================================================
-#  画布 (Canvas / View)
+#  画布
 # ================================================================
 class FlowCanvas(QGraphicsView):
-    """支持平移、缩放和右键菜单的流程图画布"""
-
     def __init__(self, scene: FlowScene, parent=None):
         super().__init__(scene, parent)
         self.setRenderHint(QPainter.Antialiasing)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        self.setDragMode(QGraphicsView.NoDrag)
+        self.setDragMode(QGraphicsView.RubberBandDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setStyleSheet("QGraphicsView { border: none; }")
-        self.setContextMenuPolicy(Qt.DefaultContextMenu)
 
         self._panning = False
         self._pan_start = QPointF()
@@ -565,17 +746,14 @@ class FlowCanvas(QGraphicsView):
         self._right_dragging = False
 
     def wheelEvent(self, event: QWheelEvent):
-        factor = 1.15
+        f = 1.15
         if event.angleDelta().y() > 0:
             if self._zoom < 3.0:
-                self.scale(factor, factor)
-                self._zoom *= factor
+                self.scale(f, f); self._zoom *= f
         else:
             if self._zoom > 0.2:
-                self.scale(1 / factor, 1 / factor)
-                self._zoom /= factor
+                self.scale(1/f, 1/f); self._zoom /= f
 
-    # ---------- 平移 (中键 + 右键拖拽) ----------
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MiddleButton:
             self._panning = True
@@ -590,12 +768,10 @@ class FlowCanvas(QGraphicsView):
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._panning:
-            delta = event.pos() - self._pan_start
+            d = event.pos() - self._pan_start
             self._pan_start = event.pos()
-            hs = self.horizontalScrollBar()
-            vs = self.verticalScrollBar()
-            hs.setValue(hs.value() - int(delta.x()))
-            vs.setValue(vs.value() - int(delta.y()))
+            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(d.x()))
+            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
             return
         if self._right_press_pos is not None and (event.buttons() & Qt.RightButton):
             delta = event.pos() - self._right_press_pos
@@ -607,72 +783,117 @@ class FlowCanvas(QGraphicsView):
             if self._panning:
                 d = event.pos() - self._pan_start
                 self._pan_start = event.pos()
-                hs = self.horizontalScrollBar()
-                vs = self.verticalScrollBar()
-                hs.setValue(hs.value() - int(d.x()))
-                vs.setValue(vs.value() - int(d.y()))
+                self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(d.x()))
+                self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(d.y()))
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MiddleButton and self._panning:
-            self._panning = False
-            self.setCursor(Qt.ArrowCursor)
-            return
+            self._panning = False; self.setCursor(Qt.ArrowCursor); return
         if event.button() == Qt.RightButton:
-            was_dragging = self._right_dragging
+            was = self._right_dragging
             self._right_press_pos = None
             self._right_dragging = False
             if self._panning:
-                self._panning = False
-                self.setCursor(Qt.ArrowCursor)
-            if not was_dragging:
-                self._show_context_menu(event.pos(), event.globalPos())
+                self._panning = False; self.setCursor(Qt.ArrowCursor)
+            if not was:
+                self._show_ctx(event.pos(), event.globalPos())
             return
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Delete:
-            self.scene().remove_selected()
-            return
+        mod = event.modifiers()
+        key = event.key()
+        sc: FlowScene = self.scene()
+        if key == Qt.Key_Delete:
+            sc.remove_selected(); return
+        if mod & Qt.ControlModifier:
+            if key == Qt.Key_Z:
+                sc.undo(); return
+            if key == Qt.Key_Y:
+                sc.redo(); return
+            if key == Qt.Key_C:
+                sc.copy_selected(); return
+            if key == Qt.Key_V:
+                sc.paste(); return
+            if key == Qt.Key_A:
+                for it in sc.items():
+                    if isinstance(it, (FlowNodeItem, FlowConnectionItem)):
+                        it.setSelected(True)
+                return
         super().keyPressEvent(event)
 
-    # ---------- 右键菜单 ----------
-    def _show_context_menu(self, view_pos, global_pos):
-        scene_pos = self.mapToScene(view_pos)
-        item = self.scene().itemAt(scene_pos, self.transform())
-
+    def _show_ctx(self, vp, gp):
+        sp = self.mapToScene(vp)
+        item = self.scene().itemAt(sp, self.transform())
         if isinstance(item, FlowPortItem):
             item = item.node_item
-
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu { background: palette(window); border: 1px solid palette(mid); border-radius: 6px; padding: 4px; }
-            QMenu::item { padding: 6px 24px; border-radius: 4px; }
-            QMenu::item:selected { background: palette(highlight); color: palette(highlighted-text); }
-            QMenu::separator { height: 1px; background: palette(mid); margin: 4px 8px; }
-        """)
-
+        menu.setStyleSheet(
+            "QMenu{background:palette(window);border:1px solid palette(mid);border-radius:6px;padding:4px;}"
+            "QMenu::item{padding:6px 24px;border-radius:4px;}"
+            "QMenu::item:selected{background:palette(highlight);color:palette(highlighted-text);}"
+            "QMenu::separator{height:1px;background:palette(mid);margin:4px 8px;}"
+        )
+        sc: FlowScene = self.scene()
         if isinstance(item, FlowNodeItem):
-            act_del = menu.addAction("删除节点")
-            act_del.triggered.connect(lambda: self.scene().remove_node_by_id(item.flow_node.id))
+            menu.addAction("删除节点").triggered.connect(lambda: sc.remove_node_by_id(item.flow_node.id))
         elif isinstance(item, FlowConnectionItem):
-            act_del = menu.addAction("删除连接")
-            act_del.triggered.connect(lambda: self.scene().remove_connection_by_id(item.connection.id))
+            menu.addAction("删除连接").triggered.connect(lambda: sc.remove_connection_by_id(item.connection.id))
         else:
-            add_menu = menu.addMenu("添加节点")
+            sub = menu.addMenu("添加节点")
             for nt in NodeType:
-                act = add_menu.addAction(NODE_TYPE_LABELS[nt])
-                act.triggered.connect(
-                    lambda checked, _nt=nt, _p=scene_pos: self.scene().add_node(_nt, _p.x(), _p.y())
-                )
+                sub.addAction(NODE_TYPE_LABELS[nt]).triggered.connect(
+                    lambda chk, _n=nt, _p=sp: sc.add_node(_n, _p.x(), _p.y()))
             menu.addSeparator()
-            act_sel_all = menu.addAction("全选")
-            act_sel_all.triggered.connect(self._select_all)
+            menu.addAction("全选  Ctrl+A").triggered.connect(
+                lambda: [it.setSelected(True) for it in sc.items() if isinstance(it, (FlowNodeItem, FlowConnectionItem))])
+            menu.addAction("撤销  Ctrl+Z").triggered.connect(sc.undo)
+            menu.addAction("重做  Ctrl+Y").triggered.connect(sc.redo)
+        menu.exec_(gp)
 
-        menu.exec_(global_pos)
 
-    def _select_all(self):
-        for item in self.scene().items():
-            if isinstance(item, (FlowNodeItem, FlowConnectionItem)):
-                item.setSelected(True)
+# ================================================================
+#  小地图
+# ================================================================
+class FlowMinimap(QGraphicsView):
+    def __init__(self, main_scene: QGraphicsScene, main_view: QGraphicsView, parent=None):
+        super().__init__(main_scene, parent or main_view)
+        self._main = main_view
+        self.setFixedSize(200, 150)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setInteractive(False)
+        self.setStyleSheet("border:1px solid palette(mid);border-radius:4px;")
+
+    def drawBackground(self, painter, rect):
+        painter.fillRect(rect, QBrush(_tc()["bg"]))
+
+    def drawForeground(self, painter, rect):
+        if self._main:
+            vr = self._main.mapToScene(self._main.viewport().rect()).boundingRect()
+            painter.setPen(QPen(QColor(33, 150, 243, 150), 2))
+            painter.setBrush(QBrush(QColor(33, 150, 243, 20)))
+            painter.drawRect(vr)
+
+    def refresh(self):
+        r = self.scene().itemsBoundingRect()
+        if r.isNull():
+            return
+        r.adjust(-80, -80, 80, 80)
+        self.fitInView(r, Qt.KeepAspectRatio)
+        self.viewport().update()
+
+    def mousePressEvent(self, event):
+        if self._main:
+            self._main.centerOn(self.mapToScene(event.pos()))
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self._main:
+            self._main.centerOn(self.mapToScene(event.pos()))
+
+    def reposition(self):
+        pr = self.parent().rect() if self.parent() else QRectF()
+        self.move(int(pr.width()) - self.width() - 8, int(pr.height()) - self.height() - 8)
