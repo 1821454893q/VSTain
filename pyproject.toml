@@ -1,6 +1,6 @@
 [project]
 name = "VSTain"
-version = "0.0.1"
+version = "0.1.0"
 description = "VSTain - Vision Script Tool"
 readme = "README.md"
 requires-python = ">=3.13"
