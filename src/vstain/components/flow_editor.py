@@ -6,7 +6,7 @@
 
 import json
 import math
-from collections import deque
+from collections import defaultdict, deque
 from typing import Dict, List, Optional
 
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
@@ -331,18 +331,31 @@ def _bezier(start: QPointF, end: QPointF) -> QPainterPath:
     return p
 
 
+ORDER_BADGE_RADIUS = 9
+ORDER_BADGE_COLOR = QColor(33, 150, 243)
+
+
 class FlowConnectionItem(QGraphicsPathItem):
     def __init__(self, connection: FlowConnection, sp: FlowPortItem, tp: FlowPortItem):
         super().__init__()
         self.connection = connection
         self.source_port = sp
         self.target_port = tp
+        self._show_order = False
+        self._order_rank = 1
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setZValue(-1)
         self.update_path()
 
     def update_path(self):
         self.setPath(_bezier(self.source_port.center_scene_pos(), self.target_port.center_scene_pos()))
+
+    def boundingRect(self):
+        r = super().boundingRect()
+        if self._show_order:
+            r.adjust(-ORDER_BADGE_RADIUS, -ORDER_BADGE_RADIUS,
+                     ORDER_BADGE_RADIUS, ORDER_BADGE_RADIUS)
+        return r
 
     def paint(self, painter: QPainter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
@@ -367,6 +380,18 @@ class FlowConnectionItem(QGraphicsPathItem):
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(color))
         painter.drawPolygon(QPolygonF([p2, a1, a2]))
+
+        if self._show_order and path.length() > 1:
+            bp = path.pointAtPercent(0.18)
+            r = ORDER_BADGE_RADIUS
+            painter.setPen(QPen(QColor(255, 255, 255), 1))
+            painter.setBrush(QBrush(ORDER_BADGE_COLOR))
+            painter.drawEllipse(bp, r, r)
+            painter.setFont(QFont("Microsoft YaHei", 7, QFont.Bold))
+            painter.drawText(
+                QRectF(bp.x() - r, bp.y() - r, r * 2, r * 2),
+                Qt.AlignCenter, str(self._order_rank),
+            )
 
     def shape(self) -> QPainterPath:
         from PyQt5.QtGui import QPainterPathStroker
@@ -404,6 +429,7 @@ class FlowScene(QGraphicsScene):
         self._clipboard: Optional[str] = None
         self.setSceneRect(-3000, -3000, 6000, 6000)
         self._push_undo()
+        self.flow_changed.connect(self._update_order_badges)
 
     # ---------- 撤销 ----------
     def _snapshot(self) -> str:
@@ -581,6 +607,30 @@ class FlowScene(QGraphicsScene):
             self.node_selected.emit(None)
             self._push_undo()
             self.flow_changed.emit()
+
+    # ---------- 连接顺序 ----------
+    def _update_order_badges(self):
+        groups: Dict[tuple, list] = defaultdict(list)
+        for c in self.flow_chart.connections:
+            groups[(c.source_node_id, c.source_port_id)].append(c)
+        ranks: Dict[str, int] = {}
+        for conns in groups.values():
+            conns.sort(key=lambda c: c.order)
+            for i, c in enumerate(conns):
+                ranks[c.id] = i + 1
+        for ci in self.connection_items.values():
+            c = ci.connection
+            show = len(groups[(c.source_node_id, c.source_port_id)]) > 1
+            rank = ranks.get(c.id, 1)
+            if ci._show_order != show or ci._order_rank != rank:
+                ci._show_order = show
+                ci._order_rank = rank
+                ci.update()
+
+    def reorder_connection(self, conn_id: str, delta: int):
+        self.flow_chart.swap_connection_order(conn_id, delta)
+        self._push_undo()
+        self.flow_changed.emit()
 
     # ---------- 连接 ----------
     def _create_connection(self, sp: FlowPortItem, tp: FlowPortItem):
@@ -764,6 +814,13 @@ class FlowCanvas(QGraphicsView):
             self._right_press_pos = event.pos()
             self._right_dragging = False
             return
+        if event.button() == Qt.LeftButton:
+            scene_pos = self.mapToScene(event.pos())
+            hit = self.scene().itemAt(scene_pos, QTransform())
+            if isinstance(hit, FlowPortItem):
+                self.setDragMode(QGraphicsView.NoDrag)
+            else:
+                self.setDragMode(QGraphicsView.RubberBandDrag)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
@@ -789,6 +846,8 @@ class FlowCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() == Qt.LeftButton and self.dragMode() == QGraphicsView.NoDrag:
+            self.setDragMode(QGraphicsView.RubberBandDrag)
         if event.button() == Qt.MiddleButton and self._panning:
             self._panning = False; self.setCursor(Qt.ArrowCursor); return
         if event.button() == Qt.RightButton:
@@ -840,7 +899,19 @@ class FlowCanvas(QGraphicsView):
         if isinstance(item, FlowNodeItem):
             menu.addAction("删除节点").triggered.connect(lambda: sc.remove_node_by_id(item.flow_node.id))
         elif isinstance(item, FlowConnectionItem):
-            menu.addAction("删除连接").triggered.connect(lambda: sc.remove_connection_by_id(item.connection.id))
+            conn = item.connection
+            siblings = sc.flow_chart.get_connections_from(
+                conn.source_node_id, conn.source_port_id)
+            if len(siblings) > 1:
+                idx = next((i for i, c in enumerate(siblings) if c.id == conn.id), 0)
+                if idx > 0:
+                    menu.addAction("上移优先级 ↑").triggered.connect(
+                        lambda: sc.reorder_connection(conn.id, -1))
+                if idx < len(siblings) - 1:
+                    menu.addAction("下移优先级 ↓").triggered.connect(
+                        lambda: sc.reorder_connection(conn.id, 1))
+                menu.addSeparator()
+            menu.addAction("删除连接").triggered.connect(lambda: sc.remove_connection_by_id(conn.id))
         else:
             sub = menu.addMenu("添加节点")
             for nt in NodeType:

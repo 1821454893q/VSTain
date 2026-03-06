@@ -193,6 +193,7 @@ class FlowConnection:
     source_port_id: str
     target_node_id: str
     target_port_id: str
+    order: int = 0
 
     @staticmethod
     def create(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> "FlowConnection":
@@ -211,6 +212,7 @@ class FlowConnection:
             "source_port": self.source_port_id,
             "target_node": self.target_node_id,
             "target_port": self.target_port_id,
+            "order": self.order,
         }
 
     @staticmethod
@@ -221,6 +223,7 @@ class FlowConnection:
             source_port_id=data["source_port"],
             target_node_id=data["target_node"],
             target_port_id=data["target_port"],
+            order=data.get("order", 0),
         )
 
 
@@ -250,6 +253,10 @@ class FlowChart:
                     and c.target_node_id == conn.target_node_id
                     and c.target_port_id == conn.target_port_id):
                 return
+        siblings = [c for c in self.connections
+                     if c.source_node_id == conn.source_node_id
+                     and c.source_port_id == conn.source_port_id]
+        conn.order = max((c.order for c in siblings), default=-1) + 1
         self.connections.append(conn)
 
     def remove_connection(self, conn_id: str):
@@ -262,11 +269,28 @@ class FlowChart:
         return None
 
     def get_connections_from(self, node_id: str, port_id: str) -> List[FlowConnection]:
-        return [
-            c
-            for c in self.connections
-            if c.source_node_id == node_id and c.source_port_id == port_id
-        ]
+        return sorted(
+            [c for c in self.connections
+             if c.source_node_id == node_id and c.source_port_id == port_id],
+            key=lambda c: c.order,
+        )
+
+    def swap_connection_order(self, conn_id: str, delta: int):
+        conn = next((c for c in self.connections if c.id == conn_id), None)
+        if not conn:
+            return
+        siblings = sorted(
+            [c for c in self.connections
+             if c.source_node_id == conn.source_node_id
+             and c.source_port_id == conn.source_port_id],
+            key=lambda c: c.order,
+        )
+        idx = next((i for i, c in enumerate(siblings) if c.id == conn_id), -1)
+        new_idx = idx + delta
+        if 0 <= idx < len(siblings) and 0 <= new_idx < len(siblings):
+            siblings[idx].order, siblings[new_idx].order = (
+                siblings[new_idx].order, siblings[idx].order,
+            )
 
     def get_start_node(self) -> Optional[FlowNode]:
         for n in self.nodes:
