@@ -203,13 +203,14 @@ class WindowFeatureCaptureWidget(QWidget):
         # ORB 检测器（两个独立）
         self.orb_template = self._create_default_orb_template()  # 模板专用
         self.orb_scene = cv2.ORB_create(
-            nfeatures=20000,  # 全图提取更多点
+            nfeatures=20000,
             scaleFactor=1.2,
             nlevels=8,
             edgeThreshold=31,
             patchSize=31,
             fastThreshold=10,
         )
+        self.bf_matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
 
         self._setup_ui()
         self._set_connections()
@@ -656,10 +657,10 @@ class WindowFeatureCaptureWidget(QWidget):
 
                 height, width, channel = screenshot_img.shape
                 bytes_per_line = 3 * width
-                q_img = QImage(bgr2rgb(screenshot_img).data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+                rgb_img = np.ascontiguousarray(bgr2rgb(screenshot_img))
+                q_img = QImage(rgb_img.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
 
-                # 直接传入原尺寸图像，由 ImageViewer 负责自适应显示
-                pixmap = QPixmap.fromImage(q_img)
+                pixmap = QPixmap.fromImage(q_img.copy())
                 self.preview_label.set_image(pixmap)
 
         except Exception as e:
@@ -833,8 +834,7 @@ class WindowFeatureCaptureWidget(QWidget):
 
         log.debug(f"当前图像特征点数: {len(des2) if des2 is not None else 0}")
 
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        knn_matches = bf.knnMatch(template.descriptors, des2, k=2)
+        knn_matches = self.bf_matcher.knnMatch(template.descriptors, des2, k=2)
 
         good_matches = []
         for m_n in knn_matches:
@@ -976,9 +976,10 @@ class WindowFeatureCaptureWidget(QWidget):
 
             height, width, channel = display_image.shape
             bytes_per_line = 3 * width
-            q_img = QImage(bgr2rgb(display_image).data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+            rgb_img = np.ascontiguousarray(bgr2rgb(display_image))
+            q_img = QImage(rgb_img.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
 
-            pixmap = QPixmap.fromImage(q_img)
+            pixmap = QPixmap.fromImage(q_img.copy())
             self.preview_label.set_image(pixmap)
 
         except Exception as e:

@@ -7,7 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 import win32gui
-from PyQt5.QtCore import Qt, QEasingCurve, QSize, QRectF
+from PyQt5.QtCore import QEvent, Qt, QEasingCurve, QSize, QRectF, QMetaObject, Q_ARG, pyqtSlot
 from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget, QDialog, QLabel, QFileDialog
 from PyQt5.QtGui import QPainter, QPainterPath, QLinearGradient, QColor, QBrush
 
@@ -57,6 +57,7 @@ class HomeWidget(SingleDirectionScrollArea):
         self._set_connections()
 
         self._pause_scripts = True
+        self._child_windows = []  # 防止弹出窗口被 GC 回收
         self.test_scripts_thread = threading.Thread(target=self.test_script, daemon=True)
         self.test_scripts_thread.start()
         log.debug("测试脚本线程已启动")
@@ -119,7 +120,10 @@ class HomeWidget(SingleDirectionScrollArea):
         )
 
         self.onnx_model_name = ComboBox()
-        model_name_list = [str(p.name) for p in Path(MODULES_DIR).iterdir() if p.suffix.lower() in [".onnx"]]
+        model_name_list = (
+            [str(p.name) for p in Path(MODULES_DIR).iterdir() if p.suffix.lower() in [".onnx"]]
+            if Path(MODULES_DIR).is_dir() else []
+        )
         self.onnx_model_name.addItems(model_name_list)
         if len(model_name_list) == 1:
             cfg.set(cfg.onnxModelName, model_name_list[0])
@@ -160,12 +164,8 @@ class HomeWidget(SingleDirectionScrollArea):
         self.run_group_card.setBorderRadius(8)
 
         self.script_name = ComboBox()
-        script_name_list = [str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]]
-        self.script_name.addItems(script_name_list)
-        if len(script_name_list) == 1:
-            cfg.set(cfg.scriptName, script_name_list[0])
+        self._update_script()
 
-        self.script_name.setCurrentText(cfg.get(cfg.scriptName))
         self.script_name.setFixedWidth(300)
         self.run_group_card.addGroup(
             icon=FluentIcon.DICTIONARY,
@@ -212,8 +212,28 @@ class HomeWidget(SingleDirectionScrollArea):
 
     def openHwnd(self):
         widget = HwndListWidget()
+        self._child_windows.append(widget)
+        widget.destroyed.connect(lambda: self._child_windows.remove(widget) if widget in self._child_windows else None)
         widget.show()
         widget.cfgUpdated.connect(self.udpate_cfg)
+
+    def _update_script(self):
+        script_name_list = (
+            [str(p.name) for p in Path(SCRIPTS_DIR).iterdir() if p.suffix.lower() in [".json"]]
+            if Path(SCRIPTS_DIR).is_dir() else []
+        )
+        self.script_name.clear()
+        self.script_name.addItems(script_name_list)
+        if len(script_name_list) == 1:
+            cfg.set(cfg.scriptName, script_name_list[0])
+
+        self.script_name.setCurrentText(cfg.get(cfg.scriptName))
+
+    # def event(self, a0: QEvent) -> bool:
+    #     # 监听窗口显示事件
+    #     if a0.type() == QEvent.Show:
+    #         self._update_script()
+    #     return super().event(a0)
 
     def _capture(self):
         hwnd_list = get_hwnd_by_class_and_title(
@@ -233,6 +253,8 @@ class HomeWidget(SingleDirectionScrollArea):
             position=[0, 0],
         )
         widget = ImageCardWidget(windows=win)
+        self._child_windows.append(widget)
+        widget.destroyed.connect(lambda: self._child_windows.remove(widget) if widget in self._child_windows else None)
         widget.show()
 
     def run_script(self):
@@ -246,12 +268,16 @@ class HomeWidget(SingleDirectionScrollArea):
             self.run_btn.setText("开始")
             self._pause_scripts = True
 
+    @pyqtSlot(bool)
+    def _set_run_btn_enabled(self, enabled: bool):
+        self.run_btn.setEnabled(enabled)
+
     def test_script(self):
         log.debug("ocr engine init")
         self.engine = OCREngine.create_with_window(cfg.get(cfg.hwndWindowsTitle), cfg.get(cfg.hwndClassname), 2, False)
-        log.debug(f"ocr engine init done")
+        log.debug("ocr engine init done")
         self.flag = False
-        self.run_btn.setEnabled(True)
+        QMetaObject.invokeMethod(self, "_set_run_btn_enabled", Qt.QueuedConnection, Q_ARG(bool, True))
 
         while True:
             if self._pause_scripts:
@@ -277,5 +303,7 @@ class HomeWidget(SingleDirectionScrollArea):
             TextAction("开始挑战", self.kaishi),
             TextAction("驱离所有敌人", self.qili),
             TextAction("避险", self.qili),
+            TextAction("扼守", self.qili),
+            TextAction("驱逐", self.qili),
         ]
         self.engine.process_texts(action)

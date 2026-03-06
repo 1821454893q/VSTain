@@ -42,3 +42,5 @@ resource/scripts
 logging_config.json 
 feature_templates.json
 tests/eg
+.qoder
+.cursor

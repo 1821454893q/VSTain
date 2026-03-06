@@ -70,22 +70,32 @@ class ZoomableImageLabel(QLabel):
 
     def wheelEvent(self, event: QWheelEvent):
         # 如果启用了远程控制，转发滚轮事件到目标窗口
-        if hasattr(self.parent_widget, "is_remote_control") and self.parent_widget.is_remote_control:
+        if (
+            hasattr(self.parent_widget, "is_remote_control")
+            and self.parent_widget.is_remote_control
+        ):
             # 获取鼠标在图像上的实际坐标
             img_x, img_y = self._get_image_coordinates(event.pos())
             if img_x >= 0 and img_y >= 0:
                 # 转发滚轮事件
                 delta = event.angleDelta().y()
                 count = 1 if delta > 0 else -1
-                KeyMouseUtil.scroll_mouse(self.parent_widget.windows.hwnd, count, img_x, img_y)
+                KeyMouseUtil.scroll_mouse(
+                    self.parent_widget.windows.hwnd, count, img_x, img_y
+                )
 
             # 录制滚轮操作
-            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+            if (
+                hasattr(self.parent_widget, "is_recording")
+                and self.parent_widget.is_recording
+            ):
                 if img_x >= 0 and img_y >= 0:
                     delta = event.angleDelta().y()
                     count = 1 if delta > 0 else -1
                     # 录制滚轮操作
-                    self.parent_widget.operation_recorder.add_mouse_scroll(img_x, img_y, count)
+                    self.parent_widget.operation_recorder.add_mouse_scroll(
+                        img_x, img_y, count
+                    )
             return
 
         pix = self.pixmap()
@@ -150,17 +160,29 @@ class ZoomableImageLabel(QLabel):
 
     def mousePressEvent(self, event: QMouseEvent):
         # 如果启用了远程控制，转发鼠标点击事件到目标窗口
-        if hasattr(self.parent_widget, "is_remote_control") and self.parent_widget.is_remote_control:
+        if (
+            hasattr(self.parent_widget, "is_remote_control")
+            and self.parent_widget.is_remote_control
+        ):
             img_x, img_y = self._get_image_coordinates(event.pos())
             if img_x >= 0 and img_y >= 0:
                 if event.button() == Qt.LeftButton:
-                    KeyMouseUtil.mouse_left_down(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_left_down(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
                 elif event.button() == Qt.RightButton:
-                    KeyMouseUtil.mouse_right_down(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_right_down(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
                 elif event.button() == Qt.MiddleButton:
-                    KeyMouseUtil.mouse_middle_down(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_middle_down(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
             # 录制鼠标按下操作
-            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+            if (
+                hasattr(self.parent_widget, "is_recording")
+                and self.parent_widget.is_recording
+            ):
                 if img_x >= 0 and img_y >= 0:
                     button_name = ""
                     if event.button() == Qt.LeftButton:
@@ -171,7 +193,9 @@ class ZoomableImageLabel(QLabel):
                         button_name = "middle"
 
                     if button_name:
-                        self.parent_widget.operation_recorder.add_mouse_click(img_x, img_y, button_name, "down")
+                        self.parent_widget.operation_recorder.add_mouse_click(
+                            img_x, img_y, button_name, "down"
+                        )
             return
 
         if event.button() == Qt.LeftButton:
@@ -180,15 +204,25 @@ class ZoomableImageLabel(QLabel):
             self.setCursor(QCursor(Qt.ClosedHandCursor))
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        if hasattr(self.parent_widget, "is_remote_control") and self.parent_widget.is_remote_control:
+        if (
+            hasattr(self.parent_widget, "is_remote_control")
+            and self.parent_widget.is_remote_control
+        ):
             img_x, img_y = self._get_image_coordinates(event.pos())
             if img_x >= 0 and img_y >= 0:
                 # 如果上次有记录位置且左键按下，发送拖拽事件
                 if self.last_mouse_pos and event.buttons() & Qt.LeftButton:
-                    KeyMouseUtil.mouse_action(self.parent_widget.windows.hwnd, img_x, img_y, action_type="drag")
+                    KeyMouseUtil.mouse_action(
+                        self.parent_widget.windows.hwnd,
+                        img_x,
+                        img_y,
+                        action_type="drag",
+                    )
                 else:
                     # 发送鼠标移动事件
-                    KeyMouseUtil.mouse_move(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_move(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
 
                 self.last_mouse_pos = (img_x, img_y)
 
@@ -198,7 +232,11 @@ class ZoomableImageLabel(QLabel):
                 and self.parent_widget.is_recording
                 and event.buttons() & Qt.LeftButton
             ):  # 只在拖拽时记录移动
-                if img_x >= 0 and img_y >= 0 and time.time() - self.last_move_record_time > 0.05:
+                if (
+                    img_x >= 0
+                    and img_y >= 0
+                    and time.time() - self.last_move_record_time > 0.05
+                ):
                     self.last_move_record_time = time.time()
                     self.parent_widget.operation_recorder.add_mouse_move(img_x, img_y)
 
@@ -214,19 +252,31 @@ class ZoomableImageLabel(QLabel):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         # 如果启用了远程控制，转发鼠标释放事件到目标窗口
-        if hasattr(self.parent_widget, "is_remote_control") and self.parent_widget.is_remote_control:
+        if (
+            hasattr(self.parent_widget, "is_remote_control")
+            and self.parent_widget.is_remote_control
+        ):
             img_x, img_y = self._get_image_coordinates(event.pos())
             if img_x >= 0 and img_y >= 0:
                 if event.button() == Qt.LeftButton:
-                    KeyMouseUtil.mouse_left_up(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_left_up(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
                 elif event.button() == Qt.RightButton:
-                    KeyMouseUtil.mouse_right_up(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_right_up(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
                 elif event.button() == Qt.MiddleButton:
-                    KeyMouseUtil.mouse_middle_up(self.parent_widget.windows.hwnd, img_x, img_y)
+                    KeyMouseUtil.mouse_middle_up(
+                        self.parent_widget.windows.hwnd, img_x, img_y
+                    )
             self.last_mouse_pos = None
 
             # 录制鼠标释放操作
-            if hasattr(self.parent_widget, "is_recording") and self.parent_widget.is_recording:
+            if (
+                hasattr(self.parent_widget, "is_recording")
+                and self.parent_widget.is_recording
+            ):
                 if img_x >= 0 and img_y >= 0:
                     button_name = ""
                     if event.button() == Qt.LeftButton:
@@ -237,7 +287,9 @@ class ZoomableImageLabel(QLabel):
                         button_name = "middle"
 
                     if button_name:
-                        self.parent_widget.operation_recorder.add_mouse_click(img_x, img_y, button_name, "up")
+                        self.parent_widget.operation_recorder.add_mouse_click(
+                            img_x, img_y, button_name, "up"
+                        )
 
             return
 
@@ -266,7 +318,10 @@ class ZoomableImageLabel(QLabel):
         img_y = self.offset_y + centering_y
 
         # 检查鼠标是否在图像范围内
-        if img_x <= pos.x() <= img_x + scaled_w and img_y <= pos.y() <= img_y + scaled_h:
+        if (
+            img_x <= pos.x() <= img_x + scaled_w
+            and img_y <= pos.y() <= img_y + scaled_h
+        ):
             # 转换为图像坐标
             rel_x = (pos.x() - img_x) / self.scale
             rel_y = (pos.y() - img_y) / self.scale
@@ -295,7 +350,9 @@ class ZoomableImageLabel(QLabel):
         painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
 
         pix = self.pixmap()
-        scaled_pix = pix.scaled(pix.size() * self.scale, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled_pix = pix.scaled(
+            pix.size() * self.scale, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
 
         # 修改：偏移量现在基于(0,0)点，而不是控件中心
         # 这样 fit_to_window 设置 offset_x=0, offset_y=0 时能正确居中
@@ -428,9 +485,8 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.detect_btn.setCheckable(True)
 
         # 远程控制按钮
-        self.remote_control_btn = qf.PushButton("远程控制关")
+        self.remote_control_btn = qf.PushButton("远程控制开")
         self.remote_control_btn.setCheckable(True)
-        self.remote_control_btn.enterEvent(False)
 
         # 录制控制按钮
         self.record_check = qf.CheckBox("是否录制")
@@ -466,10 +522,14 @@ class ImageCardWidget(qfr.FramelessWindow):
         self.pause_btn.clicked.connect(self.toggle_pause)
         self.detect_btn.clicked.connect(self.toggle_detect)
         self.save_raw_btn.clicked.connect(
-            lambda: self._toggle_save("is_save_raw", self.save_raw_btn, "保存原图", "停止保存原图")
+            lambda: self._toggle_save(
+                "is_save_raw", self.save_raw_btn, "保存原图", "停止保存原图"
+            )
         )
         self.save_ann_btn.clicked.connect(
-            lambda: self._toggle_save("is_save_annotated", self.save_ann_btn, "保存标注图", "停止保存标注图")
+            lambda: self._toggle_save(
+                "is_save_annotated", self.save_ann_btn, "保存标注图", "停止保存标注图"
+            )
         )
         # 远程控制信号连接
         self.remote_control_btn.clicked.connect(self.toggle_remote_control)
@@ -513,7 +573,9 @@ class ImageCardWidget(qfr.FramelessWindow):
 
         # 生成文件名
         timestamp = int(time.time())
-        window_name = re.sub(r"[^\w]", "", self.windows.title) if self.windows else "unknown"
+        window_name = (
+            re.sub(r"[^\w]", "", self.windows.title) if self.windows else "unknown"
+        )
         filename = f"operation_{window_name}_{timestamp}.json"
 
         SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -522,7 +584,9 @@ class ImageCardWidget(qfr.FramelessWindow):
         if file_path:
             if self.operation_recorder.save_to_file(file_path):
                 self.operation_recorder.clear_operations()
-                qf.InfoBar.success("保存成功", f"操作记录已保存", duration=2000, parent=self)
+                qf.InfoBar.success(
+                    "保存成功", f"操作记录已保存", duration=2000, parent=self
+                )
             else:
                 qf.InfoBar.error("保存失败", "请查看日志了解详情", parent=self)
 
@@ -542,7 +606,9 @@ class ImageCardWidget(qfr.FramelessWindow):
     # 远程控制开关
     def toggle_remote_control(self):
         self.is_remote_control = self.remote_control_btn.isChecked()
-        self.remote_control_btn.setText("远程控制关" if self.is_remote_control else "远程控制开")
+        self.remote_control_btn.setText(
+            "远程控制关" if self.is_remote_control else "远程控制开"
+        )
 
         if self.is_remote_control:
             self.image_label.setFocus()
@@ -551,7 +617,12 @@ class ImageCardWidget(qfr.FramelessWindow):
             if self.record_check.isChecked():
                 self.start_recording()
 
-            qf.InfoBar.success("远程控制已开启", "鼠标已隐藏，移动图像 = 转动游戏视角", duration=3000, parent=self)
+            qf.InfoBar.success(
+                "远程控制已开启",
+                "鼠标已隐藏，移动图像 = 转动游戏视角",
+                duration=3000,
+                parent=self,
+            )
         else:
             # 恢复正常光标
             self.image_label.setCursor(QCursor(Qt.ArrowCursor))
@@ -559,7 +630,9 @@ class ImageCardWidget(qfr.FramelessWindow):
             if self.record_check.isChecked():
                 self.stop_recording()
 
-            qf.InfoBar.info("远程控制已关闭", "鼠标已恢复正常", duration=2000, parent=self)
+            qf.InfoBar.info(
+                "远程控制已关闭", "鼠标已恢复正常", duration=2000, parent=self
+            )
 
     def keyPressEvent(self, event):
         if self.is_remote_control and self.windows.hwnd:
@@ -597,7 +670,9 @@ class ImageCardWidget(qfr.FramelessWindow):
             if key in SPECIAL_KEY_MAP:
                 code = SPECIAL_KEY_MAP[key]
                 # 将KeyCode转换为可读名称
-                key_name = str(code).split(".")[-1] if hasattr(code, "name") else f"Key_{key}"
+                key_name = (
+                    str(code).split(".")[-1] if hasattr(code, "name") else f"Key_{key}"
+                )
             elif Qt.Key_A <= key <= Qt.Key_Z:
                 key_name = chr(key)
             elif Qt.Key_0 <= key <= Qt.Key_9:
@@ -635,9 +710,11 @@ class ImageCardWidget(qfr.FramelessWindow):
                 time.sleep(0.1)
                 continue
 
-            scr = (screenshot if self.mode_combo.currentData() == ScreenshotMode.PrintWindow else screenshot_bitblt)(
-                self.windows.hwnd
-            )
+            scr = (
+                screenshot
+                if self.mode_combo.currentData() == ScreenshotMode.PrintWindow
+                else screenshot_bitblt
+            )(self.windows.hwnd)
             if scr is None:
                 time.sleep(0.5)
                 continue
@@ -649,7 +726,9 @@ class ImageCardWidget(qfr.FramelessWindow):
                 try:
                     _, detections, ms = self.detector.detect(scr)
                     display_img = self._draw_detections(scr, detections)
-                    log.debug(f"onnx provider:{cfg.get(cfg.onnxProvider)} 检测耗时: {ms:.2f}ms")
+                    log.debug(
+                        f"onnx provider:{cfg.get(cfg.onnxProvider)} 检测耗时: {ms:.2f}ms"
+                    )
                 except Exception as e:
                     log.error(f"检测异常: {e}")
 
@@ -707,14 +786,16 @@ class ImageCardWidget(qfr.FramelessWindow):
 
             # 白字黑影（超清晰）
             for dx, dy in [(1, 1), (-1, 1), (1, -1), (-1, -1)]:
-                draw.text((x1 + 12 + dx, ty + dy), label, font=self.font, fill=(0, 0, 0))
+                draw.text(
+                    (x1 + 12 + dx, ty + dy), label, font=self.font, fill=(0, 0, 0)
+                )
             draw.text((x1 + 12, ty), label, font=self.font, fill=(255, 255, 255))
 
         return cv2.cvtColor(np.array(pil), cv2.COLOR_RGBA2BGR)
 
     def _save_image(self, img, folder):
         try:
-            title = re.sub(r"[^\\p{L}]", "", self.windows.title, flags=re.UNICODE)
+            title = re.sub(r"[^\w]", "", self.windows.title)
             path = Path(RESOURCE_DIR) / "screenshot" / folder / title
             path.mkdir(parents=True, exist_ok=True)
             filename = f"{int(time.time()*1000)}.png"
@@ -723,7 +804,11 @@ class ImageCardWidget(qfr.FramelessWindow):
             log.error(e)
 
     def _update_status(self, fps):
-        mode = "PrintWindow" if self.mode_combo.currentData() == ScreenshotMode.PrintWindow else "Bitblt"
+        mode = (
+            "PrintWindow"
+            if self.mode_combo.currentData() == ScreenshotMode.PrintWindow
+            else "Bitblt"
+        )
         detect = "检测开" if self.is_detecting else "检测关"
         raw = "原图√" if self.is_save_raw else ""
         ann = "标注√" if self.is_save_annotated else ""
@@ -744,8 +829,9 @@ class ImageCardWidget(qfr.FramelessWindow):
             return
         h, w = frame_bgr.shape[:2]
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        rgb = np.ascontiguousarray(rgb)
         qimg = QImage(rgb.data, w, h, w * 3, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(qimg)
+        pixmap = QPixmap.fromImage(qimg.copy())
         self.image_label.setPixmap(pixmap)
 
     def closeEvent(self, a0):

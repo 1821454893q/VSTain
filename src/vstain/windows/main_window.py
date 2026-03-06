@@ -41,7 +41,9 @@ class MainWindow(MSFluentWindow):
         self.homeInterface = HomeWidget("Home Interface", self)
         self.annotationInterface = AnnotationWidget("annotation Interface", self)
         self.settingsInterface = SettingsWidget("Setting Interface", self)
-        self.featureCaptureInterface = WindowFeatureCaptureWidget("teatureCapture Interface", self)
+        self.featureCaptureInterface = WindowFeatureCaptureWidget(
+            "teatureCapture Interface", self
+        )
 
         self.addSubInterface(self.homeInterface, FIF.HOME, "主页", FIF.HOME_FILL)
         self.addSubInterface(self.annotationInterface, FIF.TAG, "图片标注")
@@ -91,6 +93,11 @@ class MainWindow(MSFluentWindow):
 
     def closeEvent(self, e):
         log.debug("closeEvent")
+        pos = self.pos()
+        size = self.size()
+        cfg.set(
+            cfg.main_windows_position, [pos.x(), pos.y(), size.width(), size.height()]
+        )
         self.themeListener.terminate()
         self.themeListener.deleteLater()
         super().closeEvent(e)

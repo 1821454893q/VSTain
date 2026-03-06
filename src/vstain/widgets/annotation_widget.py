@@ -7,7 +7,15 @@ import shutil
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QPointF, QRectF, pyqtSignal
-from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor, QCursor, QWheelEvent, QMouseEvent
+from PyQt5.QtGui import (
+    QPixmap,
+    QPainter,
+    QPen,
+    QColor,
+    QCursor,
+    QWheelEvent,
+    QMouseEvent,
+)
 from PyQt5.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -66,7 +74,9 @@ class AnnotationCanvas(QLabel):
         super().__init__(parent)
         self.setAlignment(Qt.AlignCenter)
         self.setMouseTracking(True)
-        self.setStyleSheet("background:#1e1e1e; border: 2px solid #333; border-radius: 6px;")
+        self.setStyleSheet(
+            "background:#1e1e1e; border: 2px solid #333; border-radius: 6px;"
+        )
         self.setMinimumSize(600, 450)
 
         self.original_pixmap = None
@@ -212,7 +222,10 @@ class AnnotationCanvas(QLabel):
         elif event.button() == Qt.LeftButton and self.is_drawing:
             # 标注完成
             end = self._display_to_norm(event.pos())
-            if end and (abs(self.start_pos.x() - end.x()) > 0.003 or abs(self.start_pos.y() - end.y()) > 0.003):
+            if end and (
+                abs(self.start_pos.x() - end.x()) > 0.003
+                or abs(self.start_pos.y() - end.y()) > 0.003
+            ):
                 cx = (self.start_pos.x() + end.x()) / 2
                 cy = (self.start_pos.y() + end.y()) / 2
                 w = abs(self.start_pos.x() - end.x())
@@ -304,7 +317,13 @@ class AnnotationCanvas(QLabel):
         painter.setRenderHint(QPainter.Antialiasing)
 
         rect, _ = self._get_image_rect()
-        painter.drawPixmap(int(rect.x()), int(rect.y()), int(rect.width()), int(rect.height()), self.original_pixmap)
+        painter.drawPixmap(
+            int(rect.x()),
+            int(rect.y()),
+            int(rect.width()),
+            int(rect.height()),
+            self.original_pixmap,
+        )
 
         # 绘制模式信息和缩放比例
         mode_text = "标注模式" if self.is_drawing_mode else "平移模式"
@@ -343,7 +362,9 @@ class AnnotationCanvas(QLabel):
         if self.is_drawing:
             painter.setPen(self.drawing_pen)
             x1 = rect.x() + min(self.start_pos.x(), self.current_pos.x()) * rect.width()
-            y1 = rect.y() + min(self.start_pos.y(), self.current_pos.y()) * rect.height()
+            y1 = (
+                rect.y() + min(self.start_pos.y(), self.current_pos.y()) * rect.height()
+            )
             w = abs(self.start_pos.x() - self.current_pos.x()) * rect.width()
             h = abs(self.start_pos.y() - self.current_pos.y()) * rect.height()
             painter.drawRect(QRectF(x1, y1, w, h))
@@ -447,14 +468,19 @@ class AnnotationWidget(QWidget):
         if model_path.exists():
             size = cfg.get(cfg.onnxModelInput)
             self.detector = YOLOONNXDetector(
-                str(model_path), conf_threshold=0.8, input_size=(size, size), providers=[cfg.get(cfg.onnxProvider)]
+                str(model_path),
+                conf_threshold=0.8,
+                input_size=(size, size),
+                providers=[cfg.get(cfg.onnxProvider)],
             )
             self.classes = self.detector.get_class_names()
             log.debug(
                 f"已加载模型: {model_path} 模型加载成功, 类别数: {len(self.classes)} 使用提供者: {cfg.get(cfg.onnxProvider)}"
             )
-        elif hasattr(self,"detector") and self.detector is not None:
-            InfoBar.warning("提示", "未找到模型文件, 请检查模型文件是否存在", parent=self)
+        elif hasattr(self, "detector") and self.detector is not None:
+            InfoBar.warning(
+                "提示", "未找到模型文件, 请检查模型文件是否存在", parent=self
+            )
             self.detector = None
             self.classes = []
         else:
@@ -610,7 +636,9 @@ class AnnotationWidget(QWidget):
         self.zoom_reset_btn.clicked.connect(self._zoom_reset)
 
         self.canvas.bboxDrawn.connect(self._on_bbox_drawn)
-        self.class_list.currentRowChanged.connect(lambda row: setattr(self.canvas, "current_class_id", row))
+        self.class_list.currentRowChanged.connect(
+            lambda row: setattr(self.canvas, "current_class_id", row)
+        )
 
         self.jump_btn.clicked.connect(self._jump_to_page)
         self.page_edit.returnPressed.connect(self._jump_to_page)  # 按回车也可以跳转
@@ -637,9 +665,13 @@ class AnnotationWidget(QWidget):
         elif k == Qt.Key.Key_Q:
             self._toggle_drawing_mode()
         # 缩放快捷键
-        elif k == Qt.Key.Key_Equal and m == Qt.KeyboardModifier.ControlModifier:  # Ctrl++
+        elif (
+            k == Qt.Key.Key_Equal and m == Qt.KeyboardModifier.ControlModifier
+        ):  # Ctrl++
             self._zoom_in()
-        elif k == Qt.Key.Key_Minus and m == Qt.KeyboardModifier.ControlModifier:  # Ctrl+-
+        elif (
+            k == Qt.Key.Key_Minus and m == Qt.KeyboardModifier.ControlModifier
+        ):  # Ctrl+-
             self._zoom_out()
         elif k == Qt.Key.Key_R:  # R键重置视图
             self._zoom_reset()
@@ -648,21 +680,33 @@ class AnnotationWidget(QWidget):
         # W S 控制类别选择
         elif k == Qt.Key.Key_W:
             current_row = self.class_list.currentRow()
-            new_row = current_row - 1 if current_row > 0 else self.class_list.count() - 1
+            new_row = (
+                current_row - 1 if current_row > 0 else self.class_list.count() - 1
+            )
             self.class_list.setCurrentRow(new_row)
         elif k == Qt.Key.Key_S:
             current_row = self.class_list.currentRow()
-            new_row = current_row + 1 if current_row < self.class_list.count() - 1 else 0
+            new_row = (
+                current_row + 1 if current_row < self.class_list.count() - 1 else 0
+            )
             self.class_list.setCurrentRow(new_row)
         # C 复制上一次标注框
         elif k == Qt.Key.Key_C:
             self.annotation_temp = self.canvas.list_annotations()
-            InfoBar.success("复制成功", f"一共复制{len(self.annotation_temp)}个标注框", parent=self)
+            InfoBar.success(
+                "复制成功", f"一共复制{len(self.annotation_temp)}个标注框", parent=self
+            )
         # V 粘贴标注框
         elif k == Qt.Key.Key_V:
             if hasattr(self, "annotation_temp") and len(self.annotation_temp) > 0:
                 self.canvas.append_annotations(self.annotation_temp)
-            InfoBar.success("粘贴成功", f"一共粘贴{len(self.annotation_temp)}个标注框", parent=self)
+                InfoBar.success(
+                    "粘贴成功",
+                    f"一共粘贴{len(self.annotation_temp)}个标注框",
+                    parent=self,
+                )
+            else:
+                InfoBar.warning("粘贴失败", "没有可粘贴的标注框", parent=self)
         else:
             super().keyPressEvent(event)
 
@@ -695,7 +739,11 @@ class AnnotationWidget(QWidget):
                 self.class_list.addItems(self.classes)
 
         self.image_files = sorted(
-            [p for p in self.dataset_path.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"}]
+            [
+                p
+                for p in self.dataset_path.iterdir()
+                if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp"}
+            ]
         )
         if self.image_files:
             self.current_index = 0
@@ -726,7 +774,9 @@ class AnnotationWidget(QWidget):
                         cid = int(parts[0])
                         vals = list(map(float, parts[1:]))
                         self.canvas.annotations.append([cid] + vals)
-                        name = self.classes[cid] if cid < len(self.classes) else "unknown"
+                        name = (
+                            self.classes[cid] if cid < len(self.classes) else "unknown"
+                        )
                         self.annotation_list.addItem(f"{name} {vals}")
             self.canvas.update()
 
@@ -765,7 +815,11 @@ class AnnotationWidget(QWidget):
         try:
             _, detections, ms = self.detector.detect(str(self.current_image_path))
             self.canvas.set_annotations(detections, self.classes)
-            InfoBar.success("自动标注完成", f"检测到 {len(detections)} 个目标 耗时 {ms:.2f}ms", parent=self)
+            InfoBar.success(
+                "自动标注完成",
+                f"检测到 {len(detections)} 个目标 耗时 {ms:.2f}ms",
+                parent=self,
+            )
         except Exception as e:
             InfoBar.error("检测失败", str(e), parent=self)
 
@@ -782,9 +836,13 @@ class AnnotationWidget(QWidget):
         txt_path = self.current_image_path.with_suffix(".txt")
         with open(txt_path, "w", encoding="utf-8") as f:
             for ann in self.canvas.annotations:
-                f.write(f"{ann[0]} {ann[1]:.6f} {ann[2]:.6f} {ann[3]:.6f} {ann[4]:.6f}\n")
+                f.write(
+                    f"{ann[0]} {ann[1]:.6f} {ann[2]:.6f} {ann[3]:.6f} {ann[4]:.6f}\n"
+                )
 
         # 保存 classes.txt
+        if not hasattr(self, "dataset_path"):
+            return
         with open(self.dataset_path / "classes.txt", "w", encoding="utf-8") as f:
             for c in self.classes:
                 f.write(c + "\n")
@@ -807,9 +865,15 @@ class AnnotationWidget(QWidget):
                 # 清空输入框
                 self.page_edit.clear()
 
-                InfoBar.success("跳转成功", f"已跳转到第 {page_num} 页", duration=1000, parent=self)
+                InfoBar.success(
+                    "跳转成功", f"已跳转到第 {page_num} 页", duration=1000, parent=self
+                )
             else:
-                InfoBar.warning("页码无效", f"请输入 1-{len(self.image_files)} 之间的数字", parent=self)
+                InfoBar.warning(
+                    "页码无效",
+                    f"请输入 1-{len(self.image_files)} 之间的数字",
+                    parent=self,
+                )
         except ValueError:
             InfoBar.warning("输入错误", "请输入有效的页码数字", parent=self)
 
@@ -826,12 +890,16 @@ class AnnotationWidget(QWidget):
     # ==================== 缩放功能 ====================
     def _zoom_in(self):
         """放大"""
-        self.canvas.zoom_factor = min(self.canvas.max_zoom, self.canvas.zoom_factor + self.canvas.zoom_step)
+        self.canvas.zoom_factor = min(
+            self.canvas.max_zoom, self.canvas.zoom_factor + self.canvas.zoom_step
+        )
         self.canvas.update()
 
     def _zoom_out(self):
         """缩小"""
-        self.canvas.zoom_factor = max(self.canvas.min_zoom, self.canvas.zoom_factor - self.canvas.zoom_step)
+        self.canvas.zoom_factor = max(
+            self.canvas.min_zoom, self.canvas.zoom_factor - self.canvas.zoom_step
+        )
         self.canvas.update()
 
     def _zoom_reset(self):
@@ -852,7 +920,10 @@ class AnnotationWidget(QWidget):
 
         # 选择输出目录
         output_dir = QFileDialog.getExistingDirectory(
-            self, "选择输出目录", str(self.dataset_path.parent), options=QFileDialog.ShowDirsOnly
+            self,
+            "选择输出目录",
+            str(self.dataset_path.parent),
+            options=QFileDialog.ShowDirsOnly,
         )
 
         if output_dir:
@@ -866,7 +937,12 @@ class AnnotationWidget(QWidget):
             )
 
     def organize_yolo_dataset(
-        self, output_dir, train_ratio=0.8, cleanup_existing=True, filter_annotated=True, shuffle_images=True
+        self,
+        output_dir,
+        train_ratio=0.8,
+        cleanup_existing=True,
+        filter_annotated=True,
+        shuffle_images=True,
     ):
         """整理为 YOLO 训练集格式 - 增强版本
 
@@ -914,7 +990,9 @@ class AnnotationWidget(QWidget):
 
         if not annotated_images:
             InfoBar.warning(
-                title="警告", content="未找到有标注的图片" if filter_annotated else "未找到图片", parent=self
+                title="警告",
+                content="未找到有标注的图片" if filter_annotated else "未找到图片",
+                parent=self,
             )
             return False
 
@@ -959,7 +1037,9 @@ class AnnotationWidget(QWidget):
         self._create_classes_file(output_path)
 
         # 生成数据集统计信息
-        stats = self._generate_dataset_stats(output_path, len(train_images), len(val_images))
+        stats = self._generate_dataset_stats(
+            output_path, len(train_images), len(val_images)
+        )
 
         # 显示结果
         if failed_count == 0:
@@ -970,7 +1050,9 @@ class AnnotationWidget(QWidget):
             )
         else:
             InfoBar.warning(
-                title="部分完成", content=f"成功: {success_count}, 失败: {failed_count}\n{stats}", parent=self
+                title="部分完成",
+                content=f"成功: {success_count}, 失败: {failed_count}\n{stats}",
+                parent=self,
             )
 
         return failed_count == 0
@@ -1103,10 +1185,13 @@ class AnnotationWidget(QWidget):
 
         # 统计信息
         total_images = len(self.image_files)
-        annotated_images = len([img for img in self.image_files if img.with_suffix(".txt").exists()])
+        annotated_images = len(
+            [img for img in self.image_files if img.with_suffix(".txt").exists()]
+        )
 
+        pct = (annotated_images / total_images * 100) if total_images > 0 else 0.0
         stats_label = CaptionLabel(
-            f"当前数据集: {total_images} 张图片, {annotated_images} 张有标注 ({annotated_images/total_images*100:.1f}%)"
+            f"当前数据集: {total_images} 张图片, {annotated_images} 张有标注 ({pct:.1f}%)"
         )
         layout.addRow("统计:", stats_label)
 
