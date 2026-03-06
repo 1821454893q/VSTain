@@ -1,4 +1,7 @@
-"""流程图执行引擎 - 将可视化流程图转换为可运行的脚本逻辑"""
+"""流程图执行引擎 - 将可视化流程图转换为可运行的脚本逻辑
+
+支持循环（LOOP 节点 + 回边），用全局步数上限防止死循环。
+"""
 
 import re
 import time
@@ -13,13 +16,16 @@ from src.vstain.utils.logger import get_logger
 
 log = get_logger()
 
+MAX_STEPS = 500
+
 
 class FlowExecutor:
     """
     执行流程图逻辑。
 
-    每次调用 execute() 代表一个 "tick"（等同于原 home_widget.run() 的一次循环）。
-    tick 间变量持久保留，OCR 结果每 tick 刷新。
+    每次 execute() 代表一个 tick。
+    tick 间 `variables` 持久保留，OCR 结果和循环计数器每 tick 刷新。
+    全局步数上限 MAX_STEPS 防止意外死循环。
     """
 
     def __init__(self, flow_chart: FlowChart, engine: OCREngine):
@@ -32,7 +38,8 @@ class FlowExecutor:
         """执行一次流程图遍历"""
         self._ocr_results: List[OCRItem] = []
         self._current_match: Optional[OCRItem] = None
-        self._visited: set = set()
+        self._step_count = 0
+        self._loop_state: Dict[str, int] = {}
 
         start = self.chart.get_start_node()
         if not start:
@@ -42,19 +49,22 @@ class FlowExecutor:
 
     # ---------- 节点分发 ----------
     def _exec_node(self, node: FlowNode):
-        if node.id in self._visited:
+        self._step_count += 1
+        if self._step_count > MAX_STEPS:
+            log.warning(f"执行步数超过 {MAX_STEPS}，强制终止（可能存在死循环）")
             return
-        self._visited.add(node.id)
 
         handler = {
             NodeType.START: self._handle_start,
             NodeType.OCR_SCAN: self._handle_ocr_scan,
             NodeType.TEXT_MATCH: self._handle_text_match,
             NodeType.CONDITION: self._handle_condition,
+            NodeType.LOOP: self._handle_loop,
             NodeType.CLICK: self._handle_click,
             NodeType.SET_VARIABLE: self._handle_set_variable,
             NodeType.SCRIPT_REPLAY: self._handle_script_replay,
             NodeType.WAIT: self._handle_wait,
+            NodeType.LOG: self._handle_log,
         }.get(node.node_type)
         if handler:
             handler(node)
@@ -113,6 +123,25 @@ class FlowExecutor:
         log.debug(f"条件判断: {var_name}({actual}) {operator} {value_str} => {result}")
         self._follow(node, "true" if result else "false")
 
+    def _handle_loop(self, node: FlowNode):
+        max_iter = int(node.properties.get("max_iterations", -1))
+        counter_var = node.properties.get("counter_variable", "")
+
+        key = f"_loop_{node.id}"
+        count = self._loop_state.get(key, 0)
+        self._loop_state[key] = count + 1
+
+        if counter_var:
+            self.variables[counter_var] = count
+
+        if 0 <= max_iter <= count:
+            self._loop_state.pop(key, None)
+            log.debug(f"循环结束: 已执行 {count} 次")
+            self._follow(node, "done")
+        else:
+            log.debug(f"循环第 {count + 1} 次 (max={max_iter})")
+            self._follow(node, "body")
+
     def _handle_click(self, node: FlowNode):
         if self._current_match:
             x, y = self._current_match.center
@@ -148,7 +177,21 @@ class FlowExecutor:
         time.sleep(seconds)
         self._follow(node, "out")
 
+    def _handle_log(self, node: FlowNode):
+        msg = node.properties.get("message", "")
+        resolved = self._resolve_template(msg)
+        log.info(f"[流程日志] {resolved}")
+        self._follow(node, "out")
+
     # ---------- 辅助 ----------
+    def _resolve_template(self, template: str) -> str:
+        """将 {var_name} 替换为变量值"""
+        import re as _re
+        def _repl(m):
+            name = m.group(1)
+            return str(self.variables.get(name, f"{{{name}}}"))
+        return _re.sub(r"\{(\w+)\}", _repl, template)
+
     @staticmethod
     def _cast_value(raw: str) -> Any:
         if raw.lower() == "true":

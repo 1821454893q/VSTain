@@ -40,10 +40,12 @@ _TOOLBAR_NODES = [
     (NodeType.OCR_SCAN, FluentIcon.SEARCH),
     (NodeType.TEXT_MATCH, FluentIcon.FONT),
     (NodeType.CONDITION, FluentIcon.FILTER),
+    (NodeType.LOOP, FluentIcon.SYNC),
     (NodeType.CLICK, FluentIcon.FINGERPRINT),
     (NodeType.SET_VARIABLE, FluentIcon.EDIT),
     (NodeType.SCRIPT_REPLAY, FluentIcon.VIDEO),
     (NodeType.WAIT, FluentIcon.STOP_WATCH),
+    (NodeType.LOG, FluentIcon.MESSAGE),
 ]
 
 
@@ -98,6 +100,9 @@ class _PropertiesPanel(QWidget):
                 "运算符", "operator", ["==", "!=", ">", "<", ">=", "<="], node
             )
             self._add_line("比较值", "value", node)
+        elif nt == NodeType.LOOP:
+            self._add_int_spin("最大次数 (-1=无限)", "max_iterations", node, -1, 99999)
+            self._add_line("计数器变量", "counter_variable", node)
         elif nt == NodeType.SET_VARIABLE:
             self._add_line("变量名", "variable", node)
             self._add_line("值", "value", node)
@@ -107,6 +112,8 @@ class _PropertiesPanel(QWidget):
             self._add_spin("等待秒数", "seconds", node, 0.1, 60.0)
         elif nt == NodeType.OCR_SCAN:
             self._add_spin("置信度", "confidence", node, 0.1, 1.0)
+        elif nt == NodeType.LOG:
+            self._add_line("消息 (支持 {变量名})", "message", node)
 
     # ---------- 控件工厂 ----------
     def _add_line(self, label: str, key: str, node: FlowNode):
@@ -143,6 +150,15 @@ class _PropertiesPanel(QWidget):
         sb.setSingleStep(0.1)
         sb.setDecimals(2)
         sb.setValue(float(node.properties.get(key, lo)))
+        sb.valueChanged.connect(lambda v, k=key: self._set_prop(k, v))
+        self._props_layout.addWidget(lbl)
+        self._props_layout.addWidget(sb)
+
+    def _add_int_spin(self, label: str, key: str, node: FlowNode, lo: int, hi: int):
+        lbl = BodyLabel(label)
+        sb = DoubleSpinBox()
+        sb.setRange(lo, hi)
+        sb.setValue(int(node.properties.get(key, lo)))
         sb.valueChanged.connect(lambda v, k=key: self._set_prop(k, v))
         self._props_layout.addWidget(lbl)
         self._props_layout.addWidget(sb)

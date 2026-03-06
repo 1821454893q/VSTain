@@ -12,10 +12,12 @@ class NodeType(Enum):
     OCR_SCAN = "ocr_scan"
     TEXT_MATCH = "text_match"
     CONDITION = "condition"
+    LOOP = "loop"
     CLICK = "click"
     SET_VARIABLE = "set_variable"
     SCRIPT_REPLAY = "script_replay"
     WAIT = "wait"
+    LOG = "log"
 
 
 NODE_TYPE_LABELS = {
@@ -23,10 +25,12 @@ NODE_TYPE_LABELS = {
     NodeType.OCR_SCAN: "OCR 扫描",
     NodeType.TEXT_MATCH: "文本匹配",
     NodeType.CONDITION: "条件判断",
+    NodeType.LOOP: "循环",
     NodeType.CLICK: "点击",
     NodeType.SET_VARIABLE: "设置变量",
     NodeType.SCRIPT_REPLAY: "脚本回放",
     NodeType.WAIT: "等待",
+    NodeType.LOG: "日志",
 }
 
 NODE_TYPE_COLORS = {
@@ -34,10 +38,12 @@ NODE_TYPE_COLORS = {
     NodeType.OCR_SCAN: "#2196F3",
     NodeType.TEXT_MATCH: "#FF9800",
     NodeType.CONDITION: "#9C27B0",
+    NodeType.LOOP: "#795548",
     NodeType.CLICK: "#F44336",
     NodeType.SET_VARIABLE: "#009688",
     NodeType.SCRIPT_REPLAY: "#3F51B5",
     NodeType.WAIT: "#607D8B",
+    NodeType.LOG: "#FF5722",
 }
 
 
@@ -66,6 +72,11 @@ NODE_TYPE_PORTS: Dict[NodeType, List[PortDef]] = {
         PortDef("true", "True", False),
         PortDef("false", "False", False),
     ],
+    NodeType.LOOP: [
+        PortDef("in", "输入", True),
+        PortDef("body", "循环体 ↻", False),
+        PortDef("done", "完成 ✓", False),
+    ],
     NodeType.CLICK: [
         PortDef("in", "输入", True),
         PortDef("out", "输出", False),
@@ -79,6 +90,10 @@ NODE_TYPE_PORTS: Dict[NodeType, List[PortDef]] = {
         PortDef("out", "输出", False),
     ],
     NodeType.WAIT: [
+        PortDef("in", "输入", True),
+        PortDef("out", "输出", False),
+    ],
+    NodeType.LOG: [
         PortDef("in", "输入", True),
         PortDef("out", "输出", False),
     ],
@@ -110,10 +125,12 @@ class FlowNode:
             NodeType.OCR_SCAN: {"confidence": 0.5},
             NodeType.TEXT_MATCH: {"pattern": "", "is_regex": False},
             NodeType.CONDITION: {"variable": "", "operator": "==", "value": ""},
+            NodeType.LOOP: {"max_iterations": -1, "counter_variable": ""},
             NodeType.CLICK: {},
             NodeType.SET_VARIABLE: {"variable": "", "value": ""},
             NodeType.SCRIPT_REPLAY: {"script_name": ""},
             NodeType.WAIT: {"seconds": 1.0},
+            NodeType.LOG: {"message": ""},
         }
         return dict(defaults.get(node_type, {}))
 
@@ -198,11 +215,12 @@ class FlowChart:
         ]
 
     def add_connection(self, conn: FlowConnection):
-        self.connections = [
-            c
-            for c in self.connections
-            if not (c.target_node_id == conn.target_node_id and c.target_port_id == conn.target_port_id)
-        ]
+        for c in self.connections:
+            if (c.source_node_id == conn.source_node_id
+                    and c.source_port_id == conn.source_port_id
+                    and c.target_node_id == conn.target_node_id
+                    and c.target_port_id == conn.target_port_id):
+                return
         self.connections.append(conn)
 
     def remove_connection(self, conn_id: str):
